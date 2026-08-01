@@ -23,13 +23,13 @@ func Lighten(c color.NRGBA, amount float32) color.NRGBA {
 
 func GradientImage(width, height int, startColor, endColor color.NRGBA) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
+	for y := range img.Bounds().Dy() {
 		t := float32(y) / float32(height-1)
 		r := uint8(float32(startColor.R)*(1-t) + float32(endColor.R)*t)
 		g := uint8(float32(startColor.G)*(1-t) + float32(endColor.G)*t)
 		b := uint8(float32(startColor.B)*(1-t) + float32(endColor.B)*t)
 		a := uint8(float32(startColor.A)*(1-t) + float32(endColor.A)*t)
-		for x := 0; x < width; x++ {
+		for x := range img.Bounds().Dx() {
 			img.Set(x, y, color.NRGBA{R: r, G: g, B: b, A: a})
 		}
 	}
