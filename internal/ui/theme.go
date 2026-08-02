@@ -3,7 +3,6 @@ package ui
 import (
 	"image/color"
 
-	"gioui.org/font/gofont"
 	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
@@ -33,7 +32,10 @@ type Theme struct {
 
 func NewTheme() *Theme {
 	base := material.NewTheme()
-	base.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
+
+	base.Shaper = text.NewShaper(text.WithCollection(nunitoCollection()))
+	base.Face = "Nunito Sans"
+
 	return &Theme{
 		Base:          base,
 		Bg:            hex(0x1D2021), // bg0_hard
