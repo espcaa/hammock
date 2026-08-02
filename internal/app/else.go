@@ -1,7 +1,9 @@
 package app
 
 import (
+	"gioui.org/app"
 	"gioui.org/layout"
+	"gioui.org/unit"
 	"github.com/espcaa/hammock/internal/ui"
 )
 
@@ -30,4 +32,12 @@ func (s *SomethingElse) Layout(gtx layout.Context) layout.Dimensions {
 			}),
 		)
 	})
+}
+
+func (h *SomethingElse) WindowOptions() []app.Option {
+	return []app.Option{
+		app.MinSize(unit.Dp(300), unit.Dp(400)),
+		app.MaxSize(unit.Dp(300), unit.Dp(400)),
+		app.Size(unit.Dp(300), unit.Dp(400)),
+	}
 }

@@ -1,17 +1,28 @@
 package app
 
 import (
+	"gioui.org/app"
+	gioapp "gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/op"
 )
 
 type Router struct {
-	stack      []Screen
-	invalidate bool
+	stack     []Screen
+	lastSized Screen
+	win       *gioapp.Window
+}
+
+type WindowSizer interface {
+	WindowOptions() []app.Option
 }
 
 func NewRouter(initial Screen) *Router {
 	return &Router{stack: []Screen{initial}}
+}
+
+func (r *Router) SetWindow(w *gioapp.Window) {
+	r.win = w
 }
 
 func (r *Router) Push(gtx layout.Context, s Screen) {
@@ -43,5 +54,20 @@ func (r *Router) Current() Screen {
 }
 
 func (r *Router) Layout(gtx layout.Context) layout.Dimensions {
-	return r.Current().Layout(gtx)
+	cur := r.Current()
+	if cur == nil {
+		return layout.Dimensions{}
+	}
+	r.applyOptionsFor(cur)
+	return cur.Layout(gtx)
+}
+
+func (r *Router) applyOptionsFor(s Screen) {
+	if r.win == nil || s == nil || s == r.lastSized {
+		return
+	}
+	if sizer, ok := s.(WindowSizer); ok {
+		r.win.Option(sizer.WindowOptions()...)
+	}
+	r.lastSized = s
 }

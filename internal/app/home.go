@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/app"
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
@@ -59,4 +60,12 @@ func (a *HomeScreen) Layout(gtx layout.Context) layout.Dimensions {
 			}),
 		)
 	})
+}
+
+func (h *HomeScreen) WindowOptions() []app.Option {
+	return []app.Option{
+		app.MinSize(unit.Dp(600), unit.Dp(400)),
+		app.MaxSize(unit.Dp(600), unit.Dp(400)),
+		app.Size(unit.Dp(600), unit.Dp(400)),
+	}
 }
