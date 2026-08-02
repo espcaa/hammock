@@ -1,6 +1,8 @@
 package app
 
 import (
+	"math"
+
 	gioapp "gioui.org/app"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
@@ -61,9 +63,9 @@ func (a *App) handleZoom(gtx layout.Context) {
 		}
 		switch ke.Name {
 		case "=":
-			a.scale += 0.1
+			a.scale = snap(a.scale + 0.1)
 		case "-":
-			a.scale -= 0.1
+			a.scale = snap(a.scale - 0.1)
 		case "0":
 			a.scale = 1.0
 		}
@@ -72,6 +74,10 @@ func (a *App) handleZoom(gtx layout.Context) {
 		a.conf.Save()
 		gtx.Execute(op.InvalidateCmd{})
 	}
+}
+
+func snap(v float32) float32 {
+	return float32(math.Round(float64(v)*10) / 10)
 }
 
 func clamp(v, lo, hi float32) float32 {

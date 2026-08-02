@@ -179,7 +179,7 @@ func GenerateSSBParams() string {
 	instanceID := uuid.New().String()
 
 	h := sha256.New()
-	h.Write([]byte("faster-slack-client-" + instanceID))
+	h.Write([]byte("hammock-" + instanceID))
 	vid := fmt.Sprintf("%x", h.Sum(nil))[:32]
 
 	version := "4.48.102"

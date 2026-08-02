@@ -3,11 +3,12 @@ package ui
 import (
 	"image"
 
+	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material"
 	"github.com/espcaa/hammock/internal/misc"
 )
 
@@ -19,10 +20,19 @@ type ButtonStyle struct {
 	th   *Theme
 	btn  *Button
 	Text string
+
+	TextSize   unit.Sp
+	TextWeight font.Weight
+	Italic     bool
 }
 
 func (t *Theme) Button(btn *Button, txt string) ButtonStyle {
-	return ButtonStyle{th: t, btn: btn, Text: txt}
+	return ButtonStyle{
+		th:       t,
+		btn:      btn,
+		Text:     txt,
+		TextSize: 14,
+	}
 }
 
 func (b ButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
@@ -43,7 +53,6 @@ func (b ButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
 				}.Push(gtx.Ops).Pop()
 				paint.Fill(gtx.Ops, fill)
 
-				// border
 				paint.FillShape(gtx.Ops, b.th.Border,
 					clip.Stroke{
 						Path: clip.RRect{
@@ -58,7 +67,7 @@ func (b ButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
 
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(b.th.Gutter).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body1(b.th.Base, b.Text)
+					lbl := b.th.Label(b.Text, b.TextSize, b.TextWeight, b.Italic)
 					lbl.Color = b.th.Text
 					return lbl.Layout(gtx)
 				})

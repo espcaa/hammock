@@ -8,6 +8,7 @@ require (
 	github.com/bogdanfinn/tls-client v1.15.1
 	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
+	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 )
 
 require (
