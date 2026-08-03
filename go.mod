@@ -7,8 +7,8 @@ require (
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
 	github.com/coder/websocket v1.8.15
+	github.com/espcaa/webview_go v0.12.0-ua.1.0.20260803225209-5e95ade95b7d
 	github.com/google/uuid v1.6.0
-	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 )
 
 require (
