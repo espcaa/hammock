@@ -47,7 +47,6 @@ func loop(w *gioapp.Window) error {
 			return e.Err
 		case gioapp.ConfigEvent:
 			w.Invalidate()
-			log.Printf("ConfigEvent: %v", e)
 		case gioapp.FrameEvent:
 			gtx := gioapp.NewContext(&ops, e)
 

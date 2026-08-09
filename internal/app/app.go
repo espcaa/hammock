@@ -27,7 +27,7 @@ func New(w *gioapp.Window) *App {
 	router := &Router{}
 	router.SetWindow(w)
 	a := &App{theme: theme, router: router, scale: conf.Scale, conf: conf}
-	router.stack = []Screen{NewHomeScreen(theme, router)}
+	router.stack = []Screen{NewOnboardingScreen(theme, router)}
 	return a
 }
 

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"log"
+
 	"gioui.org/app"
 	gioapp "gioui.org/app"
 	"gioui.org/layout"
@@ -58,16 +60,27 @@ func (r *Router) Layout(gtx layout.Context) layout.Dimensions {
 	if cur == nil {
 		return layout.Dimensions{}
 	}
-	r.applyOptionsFor(cur)
+	if r.lastSized != cur {
+		r.applyOptionsFor(cur)
+		r.lastSized = cur
+	}
 	return cur.Layout(gtx)
 }
 
 func (r *Router) applyOptionsFor(s Screen) {
-	if r.win == nil || s == nil || s == r.lastSized {
-		return
-	}
+	log.Printf("Applying window options for screen: %T", s)
 	if sizer, ok := s.(WindowSizer); ok {
+		log.Printf("Screen %T implements WindowSizer, applying options", s)
+		for _, opt := range sizer.WindowOptions() {
+			log.Printf("Applying option: %v", opt)
+		}
 		r.win.Option(sizer.WindowOptions()...)
 	}
 	r.lastSized = s
+}
+
+func (r *Router) Invalidate() {
+	if r.win != nil {
+		r.win.Invalidate()
+	}
 }

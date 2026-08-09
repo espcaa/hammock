@@ -16,6 +16,7 @@ func RunLoginWebview(authURL string) string {
 	w.SetSize(480, 640, webview.HintNone)
 
 	capturedUrl := ""
+	serializedCookies := ""
 
 	w.Navigate(authURL)
 
@@ -27,6 +28,8 @@ func RunLoginWebview(authURL string) string {
 		}
 		return true
 	})
+
+	_ = serializedCookies
 
 	go func() {
 
@@ -44,5 +47,17 @@ func RunLoginWebview(authURL string) string {
 		}
 	}
 
-	return code
+	// get the workspace id from the captured URL
+	regex = `slack://([^/]+)`
+	workspaceId := ""
+	if capturedUrl != "" {
+		re := regexp.MustCompile(regex)
+		if m := re.FindStringSubmatch(capturedUrl); m != nil {
+			workspaceId = m[1]
+		}
+	}
+
+	// return the code, serialized cookies, and workspace url
+
+	return code + "|" + workspaceId
 }

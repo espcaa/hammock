@@ -6,26 +6,36 @@ import (
 	"image"
 	_ "image/jpeg"
 	"log"
+	"os"
+	"os/exec"
+	"sync"
 
 	"gioui.org/app"
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"github.com/espcaa/hammock/internal/slack"
 	"github.com/espcaa/hammock/internal/ui"
+	"github.com/zalando/go-keyring"
 )
 
 //go:embed assets/onboarding.jpg
 var onboarding []byte
 
-type HomeScreen struct {
-	theme       *ui.Theme
-	router      *Router
-	loginButton ui.Button
-	onboardImg  ui.Image
+type OnboardingScreen struct {
+	theme         *ui.Theme
+	router        *Router
+	loginButton   ui.Button
+	onboardImg    ui.Image
+	loading       bool
+	loadingStatus string
+	errorMessage  string
+	pendingNav    Screen
+	mu            sync.Mutex
 }
 
-func NewHomeScreen(th *ui.Theme, r *Router) *HomeScreen {
+func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
 	img, _, err := image.Decode(bytes.NewReader(onboarding))
 	if err != nil {
 		log.Fatalf("decode onboarding.jpg: %v", err)
@@ -34,45 +44,156 @@ func NewHomeScreen(th *ui.Theme, r *Router) *HomeScreen {
 	oi := th.Image(img, 300, 0)
 	oi.Fill = true
 
-	return &HomeScreen{
+	h := &OnboardingScreen{
 		theme:      th,
 		router:     r,
 		onboardImg: oi,
 	}
+
+	// one-time startup auth check
+
+	go func() {
+
+	}()
+
+	return h
 }
 
-func (a *HomeScreen) Layout(gtx layout.Context) layout.Dimensions {
-	paint.Fill(gtx.Ops, a.theme.Bg)
+func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
+
+	// check & apply pending navigation requests
+
+	a.mu.Lock()
+	next := a.pendingNav
+	a.pendingNav = nil
+	a.mu.Unlock()
+	if next != nil {
+		a.router.Push(gtx, next)
+	}
+
+	// handle button click for login
 
 	if a.loginButton.Click.Clicked(gtx) {
-		a.router.Push(gtx, NewSomethingElse(a.theme, a.router))
+		a.loading = true
+		a.loadingStatus = "Login into slack on the webview!"
+
+		// launch goroutine to run the login process
+		go func() {
+			// get the exec path of the current binary
+			execPath, err := os.Executable()
+			if err != nil {
+				log.Printf("failed to get executable path: %v", err)
+				return
+			}
+
+			// run the exec with the __login flag
+			cmd := exec.Command(execPath, "__login")
+			output, err := cmd.Output()
+			if err != nil {
+				log.Printf("failed to run login process: %v", err)
+				a.loading = false
+				return
+			}
+
+			parts := bytes.SplitN(output, []byte("|"), 2)
+			if len(parts) != 2 {
+				log.Printf("invalid output from login process: %s", output)
+				a.errorMessage = "Invalid output from login process. Please try again."
+				a.loading = false
+				return
+			}
+
+			magicCode := string(parts[0])
+			workspaceId := string(parts[1])
+			log.Printf("Received magic code: %s", magicCode)
+			log.Printf("Received workspace id: %s", workspaceId)
+
+			a.loadingStatus = "Redeeming auth cookies..."
+
+			dcookie, err := slack.RedeemAuthCookies(magicCode, workspaceId, nil)
+
+			if err != nil {
+				log.Printf("failed to redeem auth cookies: %v", err)
+				a.loading = false
+				a.errorMessage = "Failed to redeem auth cookies. Please try again."
+				return
+			}
+
+			log.Printf("Received auth cookies: %v", dcookie)
+
+			a.loadingStatus = "Saving..."
+
+			// save the xoxd token to the kerying
+			err = keyring.Set("hammock", workspaceId, dcookie)
+			if err != nil {
+				log.Printf("failed to save auth cookies to keyring: %v", err)
+				a.loading = false
+				a.errorMessage = "Failed to save auth cookies. Please try again."
+				return
+			}
+
+			// finally navigate to the main screen
+			a.mu.Lock()
+			a.pendingNav = NewMainScreen(a.theme, a.router)
+			a.mu.Unlock()
+			a.router.Invalidate()
+		}()
 	}
+
+	// draw the actual screen
+
+	paint.Fill(gtx.Ops, a.theme.Bg)
 
 	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.onboardImg.Layout(gtx)
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return a.theme.Label("Welcome to Hammock!", unit.Sp(30), font.Bold, false).Layout(gtx)
-					}),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						btn := a.theme.Button(&a.loginButton, "Login")
-						btn.TextSize = unit.Sp(20)
-						btn.TextWeight = font.Medium
-						return btn.Layout(gtx)
-					}),
-				)
-			})
+			// loading screen
+			if a.loading {
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.theme.Spinner(unit.Dp(64)).Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.theme.Label(a.loadingStatus, unit.Sp(15), font.Thin, false).Layout(gtx)
+						}),
+					)
+				})
+			} else {
+				// normal screen
+				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.theme.Label("Welcome to Hammock!", unit.Sp(30), font.Bold, false).Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							btn := a.theme.Button(&a.loginButton, "Login")
+							btn.TextSize = unit.Sp(20)
+							btn.TextWeight = font.Medium
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if a.errorMessage != "" {
+								text := a.theme.Label(a.errorMessage, unit.Sp(15), font.Thin, false)
+								text.Color = a.theme.Danger
+								return text.Layout(gtx)
+							}
+							return layout.Dimensions{}
+						}),
+					)
+				})
+			}
 		}),
 	)
 }
 
-func (h *HomeScreen) WindowOptions() []app.Option {
+func (h *OnboardingScreen) WindowOptions() []app.Option {
 	return []app.Option{
 		app.Size(unit.Dp(300), unit.Dp(400)),
 		app.MaxSize(unit.Dp(300), unit.Dp(400)),
