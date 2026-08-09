@@ -9,7 +9,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/espcaa/webview_go v0.12.0-ua.1.0.20260803225209-5e95ade95b7d
 	github.com/google/uuid v1.6.0
-	github.com/zalando/go-keyring v0.2.8
+	github.com/zalando/go-keyring v0.2.9-0.20260724212736-66b55cc0c51c
 )
 
 require (

@@ -1,5 +1,11 @@
 package slack
 
+import (
+	"encoding/json"
+
+	"github.com/zalando/go-keyring"
+)
+
 type Cookie struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
@@ -86,4 +92,37 @@ type UserbootResponse struct {
 			Image132     string `json:"image_132"`
 		} `json:"icon"`
 	} `json:"workspaces"`
+}
+
+const (
+	keyringService = "hammock"
+	keyringUser    = "session"
+)
+
+func SaveSession(session SlackSession) error {
+	data, err := json.Marshal(session)
+	if err != nil {
+		return err
+	}
+	return keyring.Set(keyringService, keyringUser, string(data))
+}
+
+func ClearSession() {
+	keyring.Delete(keyringService, keyringUser)
+}
+
+func LoadSession() (*SlackSession, error) {
+	data, err := keyring.Get(keyringService, keyringUser)
+	if err != nil {
+		if err == keyring.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var session SlackSession
+	if err := json.Unmarshal([]byte(data), &session); err != nil {
+		return nil, err
+	}
+	return &session, nil
 }

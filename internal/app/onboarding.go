@@ -17,7 +17,6 @@ import (
 	"gioui.org/unit"
 	"github.com/espcaa/hammock/internal/slack"
 	"github.com/espcaa/hammock/internal/ui"
-	"github.com/zalando/go-keyring"
 )
 
 //go:embed assets/onboarding.jpg
@@ -53,7 +52,38 @@ func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
 	// one-time startup auth check
 
 	go func() {
+		// check if we have a valid session already
+		session, err := slack.LoadSession()
+		if err == nil && session != nil {
+			// get new tokens before logging in
+			h.loading = true
+			h.loadingStatus = "Fetching tokens..."
+			session, err = slack.FetchTokens(session.DCookie)
+			if err != nil {
+				log.Printf("failed to fetch tokens: %v", err)
+				h.loading = false
+				h.errorMessage = "Failed to fetch tokens. Please try again."
+				return
+			}
 
+			// save the session object to the keyring
+			h.loadingStatus = "Saving session..."
+			err = slack.SaveSession(*session)
+			if err != nil {
+				log.Printf("failed to save session: %v", err)
+				h.loading = false
+				h.errorMessage = "Failed to save session. Please try again."
+				return
+			}
+
+			// finally navigate to the main screen
+
+			h.mu.Lock()
+			h.pendingNav = NewMainScreen(h.theme, h.router, session)
+			h.mu.Unlock()
+			h.router.Invalidate()
+			return
+		}
 	}()
 
 	return h
@@ -121,20 +151,31 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 
 			log.Printf("Received auth cookies: %v", dcookie)
 
-			a.loadingStatus = "Saving..."
+			// fetch workspaces associated with the d cookie
 
-			// save the xoxd token to the kerying
-			err = keyring.Set("hammock", workspaceId, dcookie)
+			a.loadingStatus = "Fetching tokens..."
+			session, err := slack.FetchTokens(dcookie)
 			if err != nil {
-				log.Printf("failed to save auth cookies to keyring: %v", err)
+				log.Printf("failed to fetch tokens: %v", err)
 				a.loading = false
-				a.errorMessage = "Failed to save auth cookies. Please try again."
+				a.errorMessage = "Failed to fetch tokens. Please try again."
+				return
+			}
+
+			// save the session object to the keyring
+
+			a.loadingStatus = "Saving session..."
+			err = slack.SaveSession(*session)
+			if err != nil {
+				log.Printf("failed to save session: %v", err)
+				a.loading = false
+				a.errorMessage = "Failed to save session. Please try again."
 				return
 			}
 
 			// finally navigate to the main screen
 			a.mu.Lock()
-			a.pendingNav = NewMainScreen(a.theme, a.router)
+			a.pendingNav = NewMainScreen(a.theme, a.router, session)
 			a.mu.Unlock()
 			a.router.Invalidate()
 		}()
