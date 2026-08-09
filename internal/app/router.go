@@ -1,12 +1,11 @@
 package app
 
 import (
-	"log"
-
 	"gioui.org/app"
 	gioapp "gioui.org/app"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/unit"
 )
 
 type Router struct {
@@ -68,15 +67,39 @@ func (r *Router) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (r *Router) applyOptionsFor(s Screen) {
-	log.Printf("Applying window options for screen: %T", s)
-	if sizer, ok := s.(WindowSizer); ok {
-		log.Printf("Screen %T implements WindowSizer, applying options", s)
-		for _, opt := range sizer.WindowOptions() {
-			log.Printf("Applying option: %v", opt)
+	if r.win == nil {
+		r.lastSized = s
+		return
+	}
+	sizer, ok := s.(WindowSizer)
+	if !ok {
+		r.lastSized = s
+		return
+	}
+	opts := sizer.WindowOptions()
+
+	// apply max/min size first & then the mode
+	var sizeOpts, modeOpts []app.Option
+	for _, o := range opts {
+		if isModeOption(o) {
+			modeOpts = append(modeOpts, o)
+		} else {
+			sizeOpts = append(sizeOpts, o)
 		}
-		r.win.Option(sizer.WindowOptions()...)
+	}
+	if len(sizeOpts) > 0 {
+		r.win.Option(append(sizeOpts, app.Windowed.Option())...)
+	}
+	if len(modeOpts) > 0 {
+		r.win.Option(modeOpts...)
 	}
 	r.lastSized = s
+}
+
+func isModeOption(o app.Option) bool {
+	cnf := app.Config{Mode: app.Windowed}
+	o(unit.Metric{PxPerDp: 1, PxPerSp: 1}, &cnf)
+	return cnf.Mode != app.Windowed
 }
 
 func (r *Router) Invalidate() {
