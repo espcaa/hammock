@@ -16,6 +16,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"github.com/espcaa/hammock/internal/slack"
+	"github.com/espcaa/hammock/internal/store"
 	"github.com/espcaa/hammock/internal/ui"
 )
 
@@ -25,6 +26,7 @@ var onboarding []byte
 type OnboardingScreen struct {
 	theme         *ui.Theme
 	router        *Router
+	store         *store.Store
 	loginButton   ui.Button
 	onboardImg    ui.Image
 	loading       bool
@@ -34,7 +36,7 @@ type OnboardingScreen struct {
 	mu            sync.Mutex
 }
 
-func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
+func NewOnboardingScreen(th *ui.Theme, r *Router, st *store.Store) *OnboardingScreen {
 	img, _, err := image.Decode(bytes.NewReader(onboarding))
 	if err != nil {
 		log.Fatalf("decode onboarding.jpg: %v", err)
@@ -46,6 +48,7 @@ func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
 	h := &OnboardingScreen{
 		theme:      th,
 		router:     r,
+		store:      st,
 		onboardImg: oi,
 	}
 
@@ -53,35 +56,27 @@ func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
 
 	go func() {
 		// check if we have a valid session already
-		session, err := slack.LoadSession()
-		if err == nil && session != nil {
-			// get new tokens before logging in
+		err := st.LoadSession()
+		if err == nil && st.SlackSession != nil { // we have a valid session
+
 			h.loading = true
 			h.loadingStatus = "Fetching tokens..."
-			session, err = slack.FetchTokens(session.DCookie)
+
+			// get new tokens before logging in
+			workspaceSessions, err := slack.FetchTokens(st.SlackSession.DCookie)
 			if err != nil {
-				log.Printf("failed to fetch tokens: %v", err)
 				h.loading = false
 				h.errorMessage = "Failed to fetch tokens. Please try again."
 				return
 			}
-
-			// save the session object to the keyring
-			h.loadingStatus = "Saving session..."
-			err = slack.SaveSession(*session)
-			if err != nil {
-				log.Printf("failed to save session: %v", err)
-				h.loading = false
-				h.errorMessage = "Failed to save session. Please try again."
-				return
-			}
+			st.SlackSession.WorkspaceSessions = workspaceSessions
 
 			// finally navigate to the main screen
-
 			h.mu.Lock()
-			h.pendingNav = NewMainScreen(h.theme, h.router, session)
+			h.pendingNav = NewMainScreen(h.theme, h.router, st)
 			h.mu.Unlock()
 			h.router.Invalidate()
+
 			return
 		}
 	}()
@@ -90,7 +85,6 @@ func NewOnboardingScreen(th *ui.Theme, r *Router) *OnboardingScreen {
 }
 
 func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
-
 	// check & apply pending navigation requests
 
 	a.mu.Lock()
@@ -154,7 +148,7 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 			// fetch workspaces associated with the d cookie
 
 			a.loadingStatus = "Fetching tokens..."
-			session, err := slack.FetchTokens(dcookie)
+			workspaces, err := slack.FetchTokens(dcookie)
 			if err != nil {
 				log.Printf("failed to fetch tokens: %v", err)
 				a.loading = false
@@ -162,10 +156,25 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 				return
 			}
 
+			workspaceIds := make([]string, 0, len(workspaces))
+			for id := range workspaces {
+				workspaceIds = append(workspaceIds, id)
+			}
+
+			log.Printf("Fetched workspaces: %v", workspaceIds)
+
+			// now create the slack session & add the workspaces just fetched
+
+			a.store.SlackSession = &store.SlackSession{
+				DCookie:           dcookie,
+				WorkspacesIds:     workspaceIds,
+				WorkspaceSessions: workspaces,
+			}
+
 			// save the session object to the keyring
 
 			a.loadingStatus = "Saving session..."
-			err = slack.SaveSession(*session)
+			err = a.store.SaveSession()
 			if err != nil {
 				log.Printf("failed to save session: %v", err)
 				a.loading = false
@@ -175,7 +184,7 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 
 			// finally navigate to the main screen
 			a.mu.Lock()
-			a.pendingNav = NewMainScreen(a.theme, a.router, session)
+			a.pendingNav = NewMainScreen(a.theme, a.router, a.store)
 			a.mu.Unlock()
 			a.router.Invalidate()
 		}()

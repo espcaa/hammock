@@ -11,12 +11,14 @@ import (
 	"gioui.org/op/paint"
 
 	"github.com/espcaa/hammock/internal/config"
+	"github.com/espcaa/hammock/internal/store"
 	"github.com/espcaa/hammock/internal/ui"
 )
 
 type App struct {
 	theme  *ui.Theme
 	router *Router
+	store  *store.Store
 	scale  float32
 	conf   *config.Config
 }
@@ -26,8 +28,9 @@ func New(w *gioapp.Window) *App {
 	theme := ui.NewTheme()
 	router := &Router{}
 	router.SetWindow(w)
-	a := &App{theme: theme, router: router, scale: conf.Scale, conf: conf}
-	router.stack = []Screen{NewOnboardingScreen(theme, router)}
+	st := store.New(store.DefaultPaths())
+	a := &App{theme: theme, router: router, store: st, scale: conf.Scale, conf: conf}
+	router.stack = []Screen{NewOnboardingScreen(theme, router, st)}
 	return a
 }
 

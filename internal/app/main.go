@@ -5,7 +5,7 @@ import (
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/unit"
-	"github.com/espcaa/hammock/internal/slack"
+	"github.com/espcaa/hammock/internal/store"
 	"github.com/espcaa/hammock/internal/ui"
 )
 
@@ -13,15 +13,15 @@ type MainScreen struct {
 	theme    *ui.Theme
 	router   *Router
 	btnState *ui.Button
-	session  *slack.SlackSession
+	store    *store.Store
 }
 
-func NewMainScreen(th *ui.Theme, r *Router, s *slack.SlackSession) *MainScreen {
+func NewMainScreen(th *ui.Theme, r *Router, s *store.Store) *MainScreen {
 	return &MainScreen{
 		theme:    th,
 		router:   r,
 		btnState: &ui.Button{},
-		session:  s,
+		store:    s,
 	}
 }
 

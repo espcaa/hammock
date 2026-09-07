@@ -56,7 +56,7 @@ type RTMConnection struct {
 }
 
 func (c *Client) ConnectRTM(teamID string, handler EventHandler) (*RTMConnection, error) {
-	ws := c.Session.Workspaces[teamID]
+	ws := c.Session.WorkspaceSessions[teamID]
 	wsURL := ConstructWebsocketURL(ws.Token, teamID, ws.EnterpriseID)
 
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -136,7 +136,7 @@ func (rtm *RTMConnection) reconnect() {
 
 	for {
 		log.Printf("RTM reconnecting for %s...", rtm.teamID)
-		ws := rtm.client.Session.Workspaces[rtm.teamID]
+		ws := rtm.client.Session.WorkspaceSessions[rtm.teamID]
 		wsURL := ConstructWebsocketURL(ws.Token, rtm.teamID, ws.EnterpriseID)
 
 		dialCtx, dialCancel := context.WithTimeout(rtm.ctx, 30*time.Second)

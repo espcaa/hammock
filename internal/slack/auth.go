@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/espcaa/hammock/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -87,8 +88,9 @@ func RedeemAuthCookies(magicToken string, workspaceId string, cookies []Cookie) 
 	return "", errors.New("no d cookie found")
 }
 
-func FetchTokens(dCookie string) (*SlackSession, error) {
-	endpoint := "https://app.slack.com/auth?app=client&lc=1775642557&return_to=%2Fclient&teams=&iframe=1"
+func FetchTokens(dCookie string) (map[string]store.WorkspaceSession, error) {
+	// make a request to slack & get the tokens from the auth config json embedded in the html
+	endpoint := "https://app.slack.com/auth?app=client&return_to=%2Fclient&teams=&iframe=1"
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -115,7 +117,7 @@ func FetchTokens(dCookie string) (*SlackSession, error) {
 	start += len(prefix)
 	end := strings.Index(bodyStr[start:], suffix)
 	if end == -1 {
-		return nil, errors.New("could not find end of config JSON")
+		return nil, errors.New("could not find end of config json")
 	}
 	configJSON := bodyStr[start : start+end]
 
@@ -124,10 +126,7 @@ func FetchTokens(dCookie string) (*SlackSession, error) {
 		return nil, fmt.Errorf("failed to parse auth config: %w", err)
 	}
 
-	session := &SlackSession{
-		DCookie:    dCookie,
-		Workspaces: make(map[string]WorkspaceSession),
-	}
+	workspaces := make(map[string]store.WorkspaceSession)
 
 	// Collect enterprise teams first for URL/token lookup
 	enterpriseTeams := make(map[string]authConfigTeam)
@@ -158,7 +157,7 @@ func FetchTokens(dCookie string) (*SlackSession, error) {
 			token = team.EnterpriseAPIToken
 		}
 
-		session.Workspaces[id] = WorkspaceSession{
+		workspaces[id] = store.WorkspaceSession{
 			Token:        token,
 			UserID:       team.UserID,
 			TeamName:     team.Name,
@@ -168,11 +167,11 @@ func FetchTokens(dCookie string) (*SlackSession, error) {
 		}
 	}
 
-	if len(session.Workspaces) == 0 {
+	if len(workspaces) == 0 {
 		return nil, errors.New("no workspaces found in auth config")
 	}
 
-	return session, nil
+	return workspaces, nil
 }
 
 func GenerateSSBParams() string {

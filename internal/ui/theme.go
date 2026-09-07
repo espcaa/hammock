@@ -38,23 +38,23 @@ func NewTheme() *Theme {
 
 	return &Theme{
 		Base:          base,
-		Bg:            hex(0x1D2021), // bg0_hard
-		Surface:       hex(0x282828), // bg0
-		SurfaceRaised: hex(0x32302F), // bg0_soft
-		Overlay:       hex(0x3C3836), // bg1
-		Border:        hex(0x504945), // bg2
-		BorderMuted:   hex(0x3C3836), // bg1
-		Text:          hex(0xEBDBB2), // fg1
-		Muted:         hex(0xA89984), // fg4
-		Faint:         hex(0x928374), // gray
-		TextOnPrimary: hex(0x1D2021), // bg0_hard
-		Primary:       hex(0x83A598), // bright blue
-		Danger:        hex(0xFB4934), // bright red
-		Success:       hex(0xB8BB26), // bright green
-		Warning:       hex(0xFABD2F), // bright yellow
-		Info:          hex(0x8EC07C), // bright aqua
+		Bg:            hex(0x0A0A0B), // near-black base
+		Surface:       hex(0x121214), // panel
+		SurfaceRaised: hex(0x1A1A1D), // raised card
+		Overlay:       hex(0x232327), // popovers / hover
+		Border:        hex(0x2A2A2F), // visible divider
+		BorderMuted:   hex(0x1E1E22), // subtle divider
+		Text:          hex(0xF4F4F5), // near-white
+		Muted:         hex(0xA1A1AA), // secondary text
+		Faint:         hex(0x71717A), // tertiary / disabled
+		TextOnPrimary: hex(0xFFFFFF), // text on primary fill
+		Primary:       hex(0x7C6CF6), // electric indigo
+		Danger:        hex(0xF4515C), // red
+		Success:       hex(0x36D399), // emerald
+		Warning:       hex(0xFBBF24), // amber
+		Info:          hex(0x60A5FA), // sky blue
 
-		Radius: unit.Dp(2),
+		Radius: unit.Dp(8),
 		Gutter: unit.Dp(8),
 	}
 }
