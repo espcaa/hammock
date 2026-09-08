@@ -1,5 +1,21 @@
 package slack
 
+import (
+	"encoding/json"
+	"net/url"
+	"strconv"
+)
+
+type ClientChannelResponse struct {
+	OK       bool `json:"ok"`
+	Channels struct {
+		Channels            []Channel `json:"channels"`
+		Ims                 []Im      `json:"ims"`
+		UnchangedChannelIds []string  `json:"unchanged_channel_ids"`
+		Ok                  bool      `json:"ok"`
+	} `json:"channels"`
+}
+
 type Channel struct {
 	ID         string `json:"id"`
 	Name       string `json:"name,omitempty"`
@@ -30,7 +46,6 @@ type Channel struct {
 	IsOpen        bool     `json:"is_open,omitempty"`
 	LastRead      string   `json:"last_read,omitempty"`
 	Priority      int      `json:"priority,omitempty"`
-	UnreadCount   int      `json:"unread_count,omitempty"`
 	UnreadDisplay int      `json:"unread_count_display,omitempty"`
 	Latest        *Message `json:"latest,omitempty"`
 
@@ -62,6 +77,17 @@ type Channel struct {
 	PreviousNames []string `json:"previous_names,omitempty"`
 }
 
+type Im struct {
+	TeamID     string `json:"context_team_id"`
+	ID         string `json:"id"`
+	Created    int64  `json:"created"`
+	Updated    int64  `json:"updated"`
+	IsArchived bool   `json:"is_archived"`
+	IsFrozen   bool   `json:"is_frozen"`
+	IsOpen     bool   `json:"is_open"`
+	User       string `json:"user"`
+}
+
 type Tab struct {
 	Type       string `json:"type"`
 	Label      string `json:"label,omitempty"`
@@ -73,4 +99,27 @@ type Tab struct {
 		MuteEditUpdates  bool   `json:"mute_edit_updates,omitempty"`
 		FolderBookmarkID string `json:"folder_bookmark_id,omitempty"`
 	} `json:"data,omitempty"`
+}
+
+func (s *Client) GetChannels(teamID string, minChannelUpdated int64) (*ClientChannelResponse, error) {
+	query := url.Values{}
+	params := url.Values{}
+
+	params.Set("version_all_channels", "false")
+	params.Set("return_all_relevant_mpdms", "true")
+
+	if minChannelUpdated > 0 {
+		params.Set("min_channel_updated", strconv.FormatInt(minChannelUpdated, 10))
+	}
+
+	raw, err := s.DoWithQuery(teamID, "client.channels", params, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp *ClientChannelResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }

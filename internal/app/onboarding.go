@@ -97,27 +97,33 @@ func FinishLogin(h *OnboardingScreen, st *store.Store) {
 				log.Printf("min channel updated for workspace %s: %d", workspaceId, minChannelUpdated)
 			}
 
-			var userbootResp *slack.UserbootResponse
+			var channelResp *slack.ClientChannelResponse
 
-			userbootResp, err = client.UserBoot(workspaceId, minChannelUpdated)
+			channelResp, err = client.GetChannels(workspaceId, minChannelUpdated)
 			if err != nil {
 				log.Printf("failed to userboot workspace %s: %v", workspaceId, err)
 				h.loading = false
 				h.errorMessage = "Failed to boot workspace: " + workspaceId + ". Please try again."
 				return
 			}
-			if userbootResp.OK {
+			if channelResp.OK {
 				log.Printf("Successfully booted workspace %s", workspaceId)
 
 				// save channels to cache
-				err = st.UpsertChannels(userbootResp.Channels, workspaceId)
+				err = st.UpsertChannels(channelResp.Channels.Channels, workspaceId)
+
+				err = st.UpsertIms(
+					channelResp.Channels.Ims,
+					workspaceId,
+				)
+
 				if err != nil {
 					log.Printf("failed to save channels for workspace %s: %v", workspaceId, err)
 					h.loading = false
 					h.errorMessage = "Failed to save channels for workspace: " + workspaceId + ". Please try again."
 					return
 				} else {
-					log.Printf("Successfully saved channels for workspace %s", workspaceId)
+					log.Printf("Successfully saved channels & ims for workspace %s", workspaceId)
 				}
 			} else {
 				log.Printf("Failed to boot workspace %s, try again", workspaceId)

@@ -10,8 +10,19 @@ import (
 	"encoding/json"
 )
 
+const getMinChannelUpdated = `-- name: GetMinChannelUpdated :one
+SELECT CAST(COALESCE(MAX(updated), 0) AS INTEGER) FROM channels WHERE team_id = ?
+`
+
+func (q *Queries) GetMinChannelUpdated(ctx context.Context, teamID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getMinChannelUpdated, teamID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listChannels = `-- name: ListChannels :many
-SELECT team_id, id, name, type, unread, updated, members, topic FROM channels
+SELECT team_id, id, name, type, unread, mentions, updated, members, topic FROM channels
 WHERE team_id = ? AND type = ? ORDER BY name
 `
 
@@ -35,6 +46,7 @@ func (q *Queries) ListChannels(ctx context.Context, arg ListChannelsParams) ([]C
 			&i.Name,
 			&i.Type,
 			&i.Unread,
+			&i.Mentions,
 			&i.Updated,
 			&i.Members,
 			&i.Topic,
@@ -52,20 +64,43 @@ func (q *Queries) ListChannels(ctx context.Context, arg ListChannelsParams) ([]C
 	return items, nil
 }
 
-const minChannelUpdated = `-- name: MinChannelUpdated :one
-SELECT CAST(COALESCE(MAX(updated), 0) AS INTEGER) FROM channels WHERE team_id = ?
+const listIms = `-- name: ListIms :many
+SELECT team_id, id, user, unreads, updated FROM ims
+WHERE team_id = ? ORDER BY user
 `
 
-func (q *Queries) MinChannelUpdated(ctx context.Context, teamID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, minChannelUpdated, teamID)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
+func (q *Queries) ListIms(ctx context.Context, teamID string) ([]Im, error) {
+	rows, err := q.db.QueryContext(ctx, listIms, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Im
+	for rows.Next() {
+		var i Im
+		if err := rows.Scan(
+			&i.TeamID,
+			&i.ID,
+			&i.User,
+			&i.Unreads,
+			&i.Updated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertChannel = `-- name: UpsertChannel :exec
-INSERT INTO channels (team_id, id, name, type, unread, updated, members, topic)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO channels (team_id, id, name, type, unread, mentions, updated, members, topic)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (team_id, id) DO UPDATE SET
   name = excluded.name, type = excluded.type,
   unread = excluded.unread, updated = excluded.updated,
@@ -73,14 +108,15 @@ ON CONFLICT (team_id, id) DO UPDATE SET
 `
 
 type UpsertChannelParams struct {
-	TeamID  string          `json:"team_id"`
-	ID      string          `json:"id"`
-	Name    string          `json:"name"`
-	Type    string          `json:"type"`
-	Unread  int64           `json:"unread"`
-	Updated int64           `json:"updated"`
-	Members json.RawMessage `json:"members"`
-	Topic   json.RawMessage `json:"topic"`
+	TeamID   string          `json:"team_id"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Type     string          `json:"type"`
+	Unread   int64           `json:"unread"`
+	Mentions int64           `json:"mentions"`
+	Updated  int64           `json:"updated"`
+	Members  json.RawMessage `json:"members"`
+	Topic    json.RawMessage `json:"topic"`
 }
 
 func (q *Queries) UpsertChannel(ctx context.Context, arg UpsertChannelParams) error {
@@ -90,9 +126,36 @@ func (q *Queries) UpsertChannel(ctx context.Context, arg UpsertChannelParams) er
 		arg.Name,
 		arg.Type,
 		arg.Unread,
+		arg.Mentions,
 		arg.Updated,
 		arg.Members,
 		arg.Topic,
+	)
+	return err
+}
+
+const upsertIm = `-- name: UpsertIm :exec
+INSERT INTO ims (team_id, id, user, unreads, updated)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (team_id, id) DO UPDATE SET
+  user = excluded.user, unreads = excluded.unreads, updated = excluded.updated
+`
+
+type UpsertImParams struct {
+	TeamID  string `json:"team_id"`
+	ID      string `json:"id"`
+	User    string `json:"user"`
+	Unreads int64  `json:"unreads"`
+	Updated int64  `json:"updated"`
+}
+
+func (q *Queries) UpsertIm(ctx context.Context, arg UpsertImParams) error {
+	_, err := q.db.ExecContext(ctx, upsertIm,
+		arg.TeamID,
+		arg.ID,
+		arg.User,
+		arg.Unreads,
+		arg.Updated,
 	)
 	return err
 }

@@ -2,11 +2,14 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/espcaa/hammock/internal/slack"
 	"github.com/espcaa/hammock/internal/store/db"
@@ -16,23 +19,82 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+const schemaHashKey = "schema_hash"
+
 func (s *Store) OpenCache() error {
 	os.MkdirAll(filepath.Dir(s.Paths.CacheDb), 0o755)
 	database, err := sql.Open("sqlite", s.Paths.CacheDb+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return err
 	}
-	if _, err := database.Exec(schemaSQL); err != nil {
+	if err := s.applySchema(database); err != nil {
+		database.Close()
 		return err
 	}
 	s.db, s.dbq = database, db.New(database)
 	return nil
 }
 
+func (s *Store) applySchema(d *sql.DB) error {
+	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		return err
+	}
+
+	var stored string
+	err := d.QueryRow("SELECT value FROM meta WHERE key = ?", schemaHashKey).Scan(&stored)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if err == nil && stored == schemaHash() {
+		return nil
+	}
+
+	if err := dropAllTables(d); err != nil {
+		return err
+	}
+	if _, err := d.Exec(schemaSQL); err != nil {
+		return err
+	}
+	_, err = d.Exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", schemaHashKey, schemaHash())
+	return err
+}
+
+func schemaHash() string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(schemaSQL)))
+}
+
+func dropAllTables(d *sql.DB) error {
+	rows, err := d.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, name := range tables {
+		if _, err := d.Exec("DROP TABLE " + strconv.Quote(name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) MinChannelUpdated(teamId string) (int64, error) {
 	ctx := context.Background()
 
-	max, err := s.dbq.MinChannelUpdated(ctx, teamId)
+	max, err := s.dbq.GetMinChannelUpdated(ctx, teamId)
 	if err != nil {
 		return 0, err
 	}
@@ -75,14 +137,43 @@ func (s *Store) UpsertChannels(channels []slack.Channel, teamId string) error {
 		}
 
 		err = s.dbq.UpsertChannel(ctx, db.UpsertChannelParams{
+			TeamID:   teamId,
+			ID:       channel.ID,
+			Name:     channel.Name,
+			Type:     channelType,
+			Unread:   int64(0),
+			Mentions: int64(0),
+			Updated:  channel.Updated,
+			Members:  jsonMemberData,
+			Topic:    jsonTopicData,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListIms(teamId string) ([]db.Im, error) {
+	ctx := context.Background()
+
+	ims, err := s.dbq.ListIms(ctx, teamId)
+	if err != nil {
+		return nil, err
+	}
+	return ims, nil
+}
+
+func (s *Store) UpsertIms(ims []slack.Im, teamId string) error {
+	ctx := context.Background()
+
+	for _, im := range ims {
+		err := s.dbq.UpsertIm(ctx, db.UpsertImParams{
 			TeamID:  teamId,
-			ID:      channel.ID,
-			Name:    channel.Name,
-			Type:    channelType,
-			Unread:  int64(channel.UnreadCount),
-			Updated: channel.Updated,
-			Members: jsonMemberData,
-			Topic:   jsonTopicData,
+			ID:      im.ID,
+			User:    im.User,
+			Unreads: int64(0), // TODO: implement unreads
+			Updated: im.Updated,
 		})
 		if err != nil {
 			return err

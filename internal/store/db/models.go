@@ -10,14 +10,23 @@ import (
 )
 
 type Channel struct {
-	TeamID  string          `json:"team_id"`
-	ID      string          `json:"id"`
-	Name    string          `json:"name"`
-	Type    string          `json:"type"`
-	Unread  int64           `json:"unread"`
-	Updated int64           `json:"updated"`
-	Members json.RawMessage `json:"members"`
-	Topic   json.RawMessage `json:"topic"`
+	TeamID   string          `json:"team_id"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Type     string          `json:"type"`
+	Unread   int64           `json:"unread"`
+	Mentions int64           `json:"mentions"`
+	Updated  int64           `json:"updated"`
+	Members  json.RawMessage `json:"members"`
+	Topic    json.RawMessage `json:"topic"`
+}
+
+type Im struct {
+	TeamID  string `json:"team_id"`
+	ID      string `json:"id"`
+	User    string `json:"user"`
+	Unreads int64  `json:"unreads"`
+	Updated int64  `json:"updated"`
 }
 
 type Message struct {
@@ -29,4 +38,9 @@ type Message struct {
 	ThreadTs  sql.NullString  `json:"thread_ts"`
 	Blocks    json.RawMessage `json:"blocks"`
 	Raw       json.RawMessage `json:"raw"`
+}
+
+type Meta struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
