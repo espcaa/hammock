@@ -14,7 +14,6 @@ import (
 
 	http "github.com/bogdanfinn/fhttp"
 	"github.com/coder/websocket"
-	"github.com/espcaa/hammock/internal/store"
 
 	tls_client "github.com/bogdanfinn/tls-client"
 	"github.com/bogdanfinn/tls-client/profiles"
@@ -38,22 +37,14 @@ type Category struct {
 }
 
 type Client struct {
-	Session              *store.SlackSession
+	Session              *SlackSession
 	HTTP                 tls_client.HttpClient
 	WebsocketConnections map[string]*websocket.Conn
 }
 
-type UserbootResponse struct {
-	OK                 bool   `json:"ok"`
-	AppCommandsCacheTs string `json:"app_commands_cache_ts"`
-	AccountType        struct {
-		IsAdmin        bool `json:"is_admin"`
-		IsOwner        bool `json:"is_owner"`
-		IsPrimaryOwner bool `json:"is_primary_owner"`
-	} `json:"account_type"`
-	Channels []Channel `json:"channels"`
-	Ims      []Channel `json:"ims"`
-	Self     struct {
+type ClientInitResponse struct {
+	OK   bool `json:"ok"`
+	Self struct {
 		ID                string `json:"id"`
 		Name              string `json:"name"`
 		IsBot             bool   `json:"is_bot"`
@@ -110,7 +101,7 @@ type UserbootResponse struct {
 	} `json:"workspaces"`
 }
 
-func NewClient(session *store.SlackSession) *Client {
+func NewClient(session *SlackSession) *Client {
 	options := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(profiles.Chrome_120),
 		tls_client.WithTimeout(30000),
@@ -289,4 +280,20 @@ func (c *Client) DoEdge(teamID string, resource string, payload map[string]any) 
 	}
 
 	return body, nil
+}
+
+func (c *Client) ClientInit(teamID string, minChannelUpdated int64) (*ClientInitResponse, error) {
+	query := url.Values{}
+	params := url.Values{}
+
+	raw, err := c.DoWithQuery(teamID, "client.init", params, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ClientInitResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }

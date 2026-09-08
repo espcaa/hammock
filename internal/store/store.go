@@ -1,9 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 
+	"github.com/espcaa/hammock/internal/slack"
+	"github.com/espcaa/hammock/internal/store/db"
 	"github.com/zalando/go-keyring"
 )
 
@@ -16,24 +19,11 @@ type ConfigFile struct {
 	WorkspaceIDs []string `json:"workspace_ids"`
 }
 
-type SlackSession struct {
-	DCookie           string   `json:"d_cookie"`
-	WorkspacesIds     []string `json:"workspaces_ids"`
-	WorkspaceSessions map[string]WorkspaceSession
-}
-
-type WorkspaceSession struct {
-	Token        string `json:"token"`
-	UserID       string `json:"user_id"`
-	TeamName     string `json:"team_name"`
-	TeamURL      string `json:"team_url"`
-	TeamIcon     string `json:"team_icon"`
-	EnterpriseID string `json:"enterprise_id,omitempty"`
-}
-
 type Store struct {
-	SlackSession *SlackSession
+	SlackSession *slack.SlackSession
 	Paths        Paths
+	db           *sql.DB
+	dbq          *db.Queries
 }
 
 func New(paths Paths) *Store {
@@ -79,7 +69,7 @@ func (s *Store) LoadSession() error {
 		return nil
 	}
 
-	s.SlackSession = &SlackSession{
+	s.SlackSession = &slack.SlackSession{
 		DCookie:       dCookie,
 		WorkspacesIds: configData.WorkspaceIDs,
 	}
@@ -111,6 +101,24 @@ func (s *Store) SaveSession() error {
 	if err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (s *Store) ClearSession() error {
+	// clear the dcookie from the keyring
+	err := keyring.Delete("hammock", "dcookie")
+	if err != nil {
+		return err
+	}
+
+	// clear the workspace ids from the config file
+	err = os.Remove(s.Paths.ConfigFile)
+	if err != nil {
+		return err
+	}
+
+	s.SlackSession = nil
 
 	return nil
 }

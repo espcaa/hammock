@@ -36,6 +36,107 @@ type OnboardingScreen struct {
 	mu            sync.Mutex
 }
 
+func FinishLogin(h *OnboardingScreen, st *store.Store) {
+	err := st.LoadSession()
+
+	if err == nil && st.SlackSession != nil { // we have a  session with a dcookie, but maybe no workspaces yet
+		h.loading = true
+		h.loadingStatus = "Fetching tokens..."
+
+		workspaces, err := slack.FetchTokens(st.SlackSession.DCookie)
+		if err != nil {
+			log.Printf("failed to fetch tokens: %v", err)
+			h.loading = false
+			h.errorMessage = "Failed to fetch tokens. Please try again."
+			return
+		}
+
+		workspaceIds := make([]string, 0, len(workspaces))
+		for id := range workspaces {
+			workspaceIds = append(workspaceIds, id)
+		}
+
+		st.SlackSession.WorkspacesIds = workspaceIds
+		st.SlackSession.WorkspaceSessions = workspaces
+
+		log.Printf("Fetched workspaces: %v", workspaceIds)
+
+		h.loadingStatus = "Saving session..."
+		err = h.store.SaveSession()
+		if err != nil {
+			log.Printf("failed to save session: %v", err)
+			h.loading = false
+			h.errorMessage = "Failed to save session. Please try again."
+			return
+		}
+
+		err = st.OpenCache()
+		if err != nil {
+			h.loading = false
+			h.errorMessage = "Failed to open cache. Please try again."
+			return
+		}
+
+		client := slack.NewClient(st.SlackSession)
+		if client == nil {
+			h.loading = false
+			h.errorMessage = "Failed to create slack client. Please try again."
+			return
+		}
+
+		// userboot for each workspace
+		for _, workspaceId := range workspaceIds {
+			h.loadingStatus = "Booting workspace: " + workspaceId
+
+			minChannelUpdated, err := st.MinChannelUpdated(workspaceId)
+
+			if err != nil {
+				minChannelUpdated = int64(0)
+				log.Printf("failed to get min channel updated for workspace %s: %v", workspaceId, err)
+			} else {
+				log.Printf("min channel updated for workspace %s: %d", workspaceId, minChannelUpdated)
+			}
+
+			var userbootResp *slack.UserbootResponse
+
+			userbootResp, err = client.UserBoot(workspaceId, minChannelUpdated)
+			if err != nil {
+				log.Printf("failed to userboot workspace %s: %v", workspaceId, err)
+				h.loading = false
+				h.errorMessage = "Failed to boot workspace: " + workspaceId + ". Please try again."
+				return
+			}
+			if userbootResp.OK {
+				log.Printf("Successfully booted workspace %s", workspaceId)
+
+				// save channels to cache
+				err = st.UpsertChannels(userbootResp.Channels, workspaceId)
+				if err != nil {
+					log.Printf("failed to save channels for workspace %s: %v", workspaceId, err)
+					h.loading = false
+					h.errorMessage = "Failed to save channels for workspace: " + workspaceId + ". Please try again."
+					return
+				} else {
+					log.Printf("Successfully saved channels for workspace %s", workspaceId)
+				}
+			} else {
+				log.Printf("Failed to boot workspace %s, try again", workspaceId)
+				h.loading = false
+				h.errorMessage = "Failed to boot workspace: " + workspaceId + ". Please try again."
+				return
+			}
+		}
+
+		// finally navigate to the main screen
+		h.mu.Lock()
+		h.pendingNav = NewMainScreen(h.theme, h.router, st, client)
+		h.mu.Unlock()
+		h.router.Invalidate()
+
+		return
+	}
+}
+
 func NewOnboardingScreen(th *ui.Theme, r *Router, st *store.Store) *OnboardingScreen {
 	img, _, err := image.Decode(bytes.NewReader(onboarding))
 	if err != nil {
@@ -55,30 +156,7 @@ func NewOnboardingScreen(th *ui.Theme, r *Router, st *store.Store) *OnboardingSc
 	// one-time startup auth check
 
 	go func() {
-		// check if we have a valid session already
-		err := st.LoadSession()
-		if err == nil && st.SlackSession != nil { // we have a valid session
-
-			h.loading = true
-			h.loadingStatus = "Fetching tokens..."
-
-			// get new tokens before logging in
-			workspaceSessions, err := slack.FetchTokens(st.SlackSession.DCookie)
-			if err != nil {
-				h.loading = false
-				h.errorMessage = "Failed to fetch tokens. Please try again."
-				return
-			}
-			st.SlackSession.WorkspaceSessions = workspaceSessions
-
-			// finally navigate to the main screen
-			h.mu.Lock()
-			h.pendingNav = NewMainScreen(h.theme, h.router, st)
-			h.mu.Unlock()
-			h.router.Invalidate()
-
-			return
-		}
+		FinishLogin(h, st)
 	}()
 
 	return h
@@ -86,7 +164,6 @@ func NewOnboardingScreen(th *ui.Theme, r *Router, st *store.Store) *OnboardingSc
 
 func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 	// check & apply pending navigation requests
-
 	a.mu.Lock()
 	next := a.pendingNav
 	a.pendingNav = nil
@@ -145,48 +222,13 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 
 			log.Printf("Received auth cookies: %v", dcookie)
 
-			// fetch workspaces associated with the d cookie
-
-			a.loadingStatus = "Fetching tokens..."
-			workspaces, err := slack.FetchTokens(dcookie)
-			if err != nil {
-				log.Printf("failed to fetch tokens: %v", err)
-				a.loading = false
-				a.errorMessage = "Failed to fetch tokens. Please try again."
-				return
+			a.store.SlackSession = &slack.SlackSession{
+				DCookie: dcookie,
 			}
 
-			workspaceIds := make([]string, 0, len(workspaces))
-			for id := range workspaces {
-				workspaceIds = append(workspaceIds, id)
-			}
+			// continue logging in
 
-			log.Printf("Fetched workspaces: %v", workspaceIds)
-
-			// now create the slack session & add the workspaces just fetched
-
-			a.store.SlackSession = &store.SlackSession{
-				DCookie:           dcookie,
-				WorkspacesIds:     workspaceIds,
-				WorkspaceSessions: workspaces,
-			}
-
-			// save the session object to the keyring
-
-			a.loadingStatus = "Saving session..."
-			err = a.store.SaveSession()
-			if err != nil {
-				log.Printf("failed to save session: %v", err)
-				a.loading = false
-				a.errorMessage = "Failed to save session. Please try again."
-				return
-			}
-
-			// finally navigate to the main screen
-			a.mu.Lock()
-			a.pendingNav = NewMainScreen(a.theme, a.router, a.store)
-			a.mu.Unlock()
-			a.router.Invalidate()
+			FinishLogin(a, a.store)
 		}()
 	}
 

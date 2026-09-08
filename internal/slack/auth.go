@@ -11,13 +11,27 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/espcaa/hammock/internal/store"
 	"github.com/google/uuid"
 )
 
 type slackAuthResponse struct {
 	OK           bool                        `json:"ok"`
 	TokenResults map[string]slackTokenResult `json:"token_results"`
+}
+
+type SlackSession struct {
+	DCookie           string   `json:"d_cookie"`
+	WorkspacesIds     []string `json:"workspaces_ids"`
+	WorkspaceSessions map[string]WorkspaceSession
+}
+
+type WorkspaceSession struct {
+	Token        string `json:"token"`
+	UserID       string `json:"user_id"`
+	TeamName     string `json:"team_name"`
+	TeamURL      string `json:"team_url"`
+	TeamIcon     string `json:"team_icon"`
+	EnterpriseID string `json:"enterprise_id,omitempty"`
 }
 
 type slackTokenResult struct {
@@ -88,7 +102,7 @@ func RedeemAuthCookies(magicToken string, workspaceId string, cookies []Cookie) 
 	return "", errors.New("no d cookie found")
 }
 
-func FetchTokens(dCookie string) (map[string]store.WorkspaceSession, error) {
+func FetchTokens(dCookie string) (map[string]WorkspaceSession, error) {
 	// make a request to slack & get the tokens from the auth config json embedded in the html
 	endpoint := "https://app.slack.com/auth?app=client&return_to=%2Fclient&teams=&iframe=1"
 	req, err := http.NewRequest("GET", endpoint, nil)
@@ -126,7 +140,7 @@ func FetchTokens(dCookie string) (map[string]store.WorkspaceSession, error) {
 		return nil, fmt.Errorf("failed to parse auth config: %w", err)
 	}
 
-	workspaces := make(map[string]store.WorkspaceSession)
+	workspaces := make(map[string]WorkspaceSession)
 
 	// Collect enterprise teams first for URL/token lookup
 	enterpriseTeams := make(map[string]authConfigTeam)
@@ -157,7 +171,7 @@ func FetchTokens(dCookie string) (map[string]store.WorkspaceSession, error) {
 			token = team.EnterpriseAPIToken
 		}
 
-		workspaces[id] = store.WorkspaceSession{
+		workspaces[id] = WorkspaceSession{
 			Token:        token,
 			UserID:       team.UserID,
 			TeamName:     team.Name,

@@ -5,40 +5,34 @@ import (
 	"gioui.org/font"
 	"gioui.org/layout"
 	"gioui.org/unit"
+	"github.com/espcaa/hammock/internal/slack"
 	"github.com/espcaa/hammock/internal/store"
 	"github.com/espcaa/hammock/internal/ui"
 )
 
 type MainScreen struct {
-	theme    *ui.Theme
-	router   *Router
-	btnState *ui.Button
-	store    *store.Store
+	theme  *ui.Theme
+	router *Router
+	store  *store.Store
+	client *slack.Client
 }
 
-func NewMainScreen(th *ui.Theme, r *Router, s *store.Store) *MainScreen {
+func NewMainScreen(th *ui.Theme, r *Router, s *store.Store, client *slack.Client) *MainScreen {
 	return &MainScreen{
-		theme:    th,
-		router:   r,
-		btnState: &ui.Button{},
-		store:    s,
+		theme:  th,
+		router: r,
+		store:  s,
+		client: client,
 	}
 }
 
 func (m *MainScreen) Layout(gtx layout.Context) layout.Dimensions {
+
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return m.theme.Label("Welcome to Hammock!", unit.Sp(24), font.Normal, false).Layout(gtx)
-			}),
-			layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				btn := m.theme.Button(m.btnState, "Go to Something Else")
-				btn.TextSize = unit.Sp(20)
-				btn.TextWeight = font.Medium
-				return btn.Layout(gtx)
-			}),
-		)
+			}))
 	})
 }
 
