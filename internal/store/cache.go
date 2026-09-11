@@ -21,6 +21,11 @@ var schemaSQL string
 
 const schemaHashKey = "schema_hash"
 
+// messageCacheLimit caps how many cached messages per channel ListMessages
+// returns (newest first). Safer to over-fetch here than to silently truncate
+// history.
+const messageCacheLimit = 1000
+
 func (s *Store) OpenCache() error {
 	os.MkdirAll(filepath.Dir(s.Paths.CacheDb), 0o755)
 	database, err := sql.Open("sqlite", s.Paths.CacheDb+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
@@ -201,4 +206,49 @@ func (s *Store) LoadSelf(teamID string) (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.RawMessage(v), nil
+}
+
+func (s *Store) UpsertMessages(messages []slack.Message, teamId string, channelId string) error {
+	ctx := context.Background()
+
+	for _, message := range messages {
+		jsonBlocks, err := json.Marshal(message.Blocks)
+		if err != nil {
+			return err
+		}
+
+		jsonRaw, err := json.Marshal(message.Raw)
+		if err != nil {
+			return err
+		}
+
+		err = s.dbq.UpsertMessage(ctx, db.UpsertMessageParams{
+			TeamID:    teamId,
+			ChannelID: channelId,
+			Ts:        message.Ts,
+			User:      sql.NullString{String: message.User, Valid: message.User != ""},
+			Text:      sql.NullString{String: message.Text, Valid: message.Text != ""},
+			ThreadTs:  sql.NullString{String: message.ThreadTs, Valid: message.ThreadTs != ""},
+			Blocks:    jsonBlocks,
+			Raw:       jsonRaw,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListMessages(teamId string, channelId string) ([]db.Message, error) {
+	ctx := context.Background()
+
+	messages, err := s.dbq.ListMessages(ctx, db.ListMessagesParams{
+		TeamID:    teamId,
+		ChannelID: channelId,
+		Limit:     messageCacheLimit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return messages, nil
 }

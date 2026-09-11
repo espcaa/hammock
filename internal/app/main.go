@@ -3,6 +3,8 @@ package app
 import (
 	"encoding/json"
 	"image"
+	"log"
+	"sync"
 
 	"gioui.org/app"
 	"gioui.org/font"
@@ -24,6 +26,11 @@ type MainScreen struct {
 	client        *slack.Client
 	currentTeamId string
 	sidebar       *ui.Sidebar
+	msgList       *ui.MessageList
+	selChannelID  string
+
+	mu          sync.Mutex
+	pendingMsgs []db.Message
 }
 
 func NewMainScreen(th *ui.Theme, r *Router, s *store.Store, client *slack.Client) *MainScreen {
@@ -34,10 +41,10 @@ func NewMainScreen(th *ui.Theme, r *Router, s *store.Store, client *slack.Client
 		client: client,
 		cache:  ui.NewImageCache(),
 	}
-
 	m.sidebar = th.Sidebar(s, "", m.cache)
+	m.msgList = ui.NewMessageList(th)
 	m.sidebar.OnSelect(func(ch db.Channel) {
-		// this is where we load and render things
+		m.loadMessages(ch.ID)
 	})
 	return m
 }
@@ -53,6 +60,7 @@ func (m *MainScreen) ensureTeam() {
 
 func (m *MainScreen) Layout(gtx layout.Context) layout.Dimensions {
 	m.ensureTeam()
+	m.applyPending()
 
 	width := gtx.Dp(ui.SidebarWidth)
 
@@ -64,6 +72,64 @@ func (m *MainScreen) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Flexed(1, m.content),
 	)
+}
+
+func (m *MainScreen) loadMessages(channelID string) {
+	if m.currentTeamId == "" {
+		return
+	}
+	teamID := m.currentTeamId
+
+	m.mu.Lock()
+	m.selChannelID = channelID
+	m.mu.Unlock()
+
+	msgs, err := m.store.ListMessages(teamID, channelID)
+	if err != nil {
+		log.Printf("list messages %s: %v", channelID, err)
+		msgs = nil
+	}
+	m.msgList.Set(msgs)
+
+	go func() {
+		resp, err := m.client.GetConversationHistory(teamID, channelID, "", 28)
+		if err != nil {
+			log.Printf("conversation.history %s: %v", channelID, err)
+			return
+		}
+		if !resp.OK || len(resp.Messages) == 0 {
+			return
+		}
+		if err := m.store.UpsertMessages(resp.Messages, teamID, channelID); err != nil {
+			log.Printf("save messages %s: %v", channelID, err)
+			return
+		}
+		fresh, err := m.store.ListMessages(teamID, channelID)
+		if err != nil {
+			log.Printf("relist messages %s: %v", channelID, err)
+			return
+		}
+		m.mu.Lock()
+		current := m.selChannelID == channelID
+		if current {
+			m.pendingMsgs = fresh
+		}
+		m.mu.Unlock()
+		if current {
+			m.router.Invalidate()
+		}
+		log.Printf("loaded %d messages for %s", len(fresh), channelID)
+	}()
+}
+
+func (m *MainScreen) applyPending() {
+	m.mu.Lock()
+	msgs := m.pendingMsgs
+	m.pendingMsgs = nil
+	m.mu.Unlock()
+	if msgs != nil {
+		m.msgList.Set(msgs)
+	}
 }
 
 func (m *MainScreen) content(gtx layout.Context) layout.Dimensions {
@@ -104,11 +170,7 @@ func (m *MainScreen) content(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: image.Pt(w, 1)}
 		}),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				lbl := m.theme.Label("No messages yet", unit.Sp(14), font.Normal, false)
-				lbl.Color = m.theme.Faint
-				return lbl.Layout(gtx)
-			})
+			return m.msgList.Layout(gtx)
 		}),
 	)
 }
@@ -121,7 +183,6 @@ func (m *MainScreen) WindowOptions() []app.Option {
 	}
 }
 
-// topicText extracts the topic value stored as raw json in the db cache
 func topicText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""

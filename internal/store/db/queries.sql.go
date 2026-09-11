@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 )
 
@@ -109,6 +110,49 @@ func (q *Queries) ListIms(ctx context.Context, teamID string) ([]Im, error) {
 	return items, nil
 }
 
+const listMessages = `-- name: ListMessages :many
+SELECT team_id, channel_id, ts, user, text, thread_ts, blocks, raw FROM messages
+WHERE team_id = ? AND channel_id = ? ORDER BY ts DESC LIMIT ?
+`
+
+type ListMessagesParams struct {
+	TeamID    string `json:"team_id"`
+	ChannelID string `json:"channel_id"`
+	Limit     int64  `json:"limit"`
+}
+
+func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error) {
+	rows, err := q.db.QueryContext(ctx, listMessages, arg.TeamID, arg.ChannelID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.TeamID,
+			&i.ChannelID,
+			&i.Ts,
+			&i.User,
+			&i.Text,
+			&i.ThreadTs,
+			&i.Blocks,
+			&i.Raw,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertChannel = `-- name: UpsertChannel :exec
 INSERT INTO channels (team_id, id, name, type, unread, mentions, updated, members, topic)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -167,6 +211,39 @@ func (q *Queries) UpsertIm(ctx context.Context, arg UpsertImParams) error {
 		arg.User,
 		arg.Unreads,
 		arg.Updated,
+	)
+	return err
+}
+
+const upsertMessage = `-- name: UpsertMessage :exec
+INSERT INTO messages (team_id, channel_id, ts, user, text, thread_ts, blocks, raw)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (team_id, channel_id, ts) DO UPDATE SET
+  user = excluded.user, text = excluded.text, thread_ts = excluded.thread_ts,
+  blocks = excluded.blocks, raw = excluded.raw
+`
+
+type UpsertMessageParams struct {
+	TeamID    string          `json:"team_id"`
+	ChannelID string          `json:"channel_id"`
+	Ts        string          `json:"ts"`
+	User      sql.NullString  `json:"user"`
+	Text      sql.NullString  `json:"text"`
+	ThreadTs  sql.NullString  `json:"thread_ts"`
+	Blocks    json.RawMessage `json:"blocks"`
+	Raw       json.RawMessage `json:"raw"`
+}
+
+func (q *Queries) UpsertMessage(ctx context.Context, arg UpsertMessageParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMessage,
+		arg.TeamID,
+		arg.ChannelID,
+		arg.Ts,
+		arg.User,
+		arg.Text,
+		arg.ThreadTs,
+		arg.Blocks,
+		arg.Raw,
 	)
 	return err
 }

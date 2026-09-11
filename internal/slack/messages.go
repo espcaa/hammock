@@ -1,6 +1,10 @@
 package slack
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"net/url"
+	"strconv"
+)
 
 type MessagesResponse struct {
 	Messages   []Message `json:"messages"`
@@ -92,4 +96,37 @@ type File struct {
 	HasRichPreview  bool   `json:"has_rich_preview,omitempty"`
 	IsStarred       bool   `json:"is_starred,omitempty"`
 	FileAccess      string `json:"file_access,omitempty"`
+}
+
+type ConversationHistoryResponse struct {
+	OK               bool      `json:"ok"`
+	Messages         []Message `json:"messages"`
+	ResponseMetadata struct {
+		NextCursor string `json:"next_cursor"`
+	} `json:"response_metadata"`
+}
+
+func (c *Client) GetConversationHistory(teamId, channelID string, latest string, limit int) (*ConversationHistoryResponse, error) {
+	params := url.Values{}
+	params.Set("channel", channelID)
+	if latest != "" {
+		params.Set("latest", latest)
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	} else {
+		params.Set("limit", "28")
+	}
+	params.Set("no_user_profile", "true")
+
+	raw, err := c.DoWithQuery(teamId, "conversations.history", params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ConversationHistoryResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }

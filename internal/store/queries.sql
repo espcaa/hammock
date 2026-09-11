@@ -29,3 +29,14 @@ ON CONFLICT (key) DO UPDATE SET value = excluded.value;
 
 -- name: GetMeta :one
 SELECT value FROM meta WHERE key = ?;
+
+-- name: UpsertMessage :exec
+INSERT INTO messages (team_id, channel_id, ts, user, text, thread_ts, blocks, raw)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (team_id, channel_id, ts) DO UPDATE SET
+  user = excluded.user, text = excluded.text, thread_ts = excluded.thread_ts,
+  blocks = excluded.blocks, raw = excluded.raw;
+
+-- name: ListMessages :many
+SELECT * FROM messages
+WHERE team_id = ? AND channel_id = ? ORDER BY ts DESC LIMIT ?;
