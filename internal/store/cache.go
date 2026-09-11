@@ -101,15 +101,19 @@ func (s *Store) MinChannelUpdated(teamId string) (int64, error) {
 	return max, nil
 }
 
-func (s *Store) ListChannels(teamId, channelType string) ([]db.Channel, error) {
+func (s *Store) ListChannels(teamId string, channelTypes []string) ([]db.Channel, error) {
 	ctx := context.Background()
 
-	channels, err := s.dbq.ListChannels(ctx, db.ListChannelsParams{
-		TeamID: teamId,
-		Type:   channelType,
-	})
-	if err != nil {
-		return nil, err
+	var channels = []db.Channel{}
+	for _, channelType := range channelTypes {
+		channelsOfType, err := s.dbq.ListChannels(ctx, db.ListChannelsParams{
+			TeamID: teamId,
+			Type:   channelType,
+		})
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, channelsOfType...)
 	}
 	return channels, nil
 }
@@ -180,4 +184,21 @@ func (s *Store) UpsertIms(ims []slack.Im, teamId string) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) SaveSelf(teamID string, self json.RawMessage) error {
+	ctx := context.Background()
+	return s.dbq.UpsertMeta(ctx, db.UpsertMetaParams{
+		Key:   fmt.Sprintf("self:%s", teamID),
+		Value: string(self),
+	})
+}
+
+func (s *Store) LoadSelf(teamID string) (json.RawMessage, error) {
+	ctx := context.Background()
+	v, err := s.dbq.GetMeta(ctx, "self:"+teamID)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(v), nil
 }

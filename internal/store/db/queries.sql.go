@@ -10,6 +10,17 @@ import (
 	"encoding/json"
 )
 
+const getMeta = `-- name: GetMeta :one
+SELECT value FROM meta WHERE key = ?
+`
+
+func (q *Queries) GetMeta(ctx context.Context, key string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getMeta, key)
+	var value string
+	err := row.Scan(&value)
+	return value, err
+}
+
 const getMinChannelUpdated = `-- name: GetMinChannelUpdated :one
 SELECT CAST(COALESCE(MAX(updated), 0) AS INTEGER) FROM channels WHERE team_id = ?
 `
@@ -157,5 +168,20 @@ func (q *Queries) UpsertIm(ctx context.Context, arg UpsertImParams) error {
 		arg.Unreads,
 		arg.Updated,
 	)
+	return err
+}
+
+const upsertMeta = `-- name: UpsertMeta :exec
+INSERT INTO meta (key, value) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value
+`
+
+type UpsertMetaParams struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func (q *Queries) UpsertMeta(ctx context.Context, arg UpsertMetaParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMeta, arg.Key, arg.Value)
 	return err
 }

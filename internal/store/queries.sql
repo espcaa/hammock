@@ -22,3 +22,10 @@ WHERE team_id = ? ORDER BY user;
 
 -- name: GetMinChannelUpdated :one
 SELECT CAST(COALESCE(MAX(updated), 0) AS INTEGER) FROM channels WHERE team_id = ?;
+
+-- name: UpsertMeta :exec
+INSERT INTO meta (key, value) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value;
+
+-- name: GetMeta :one
+SELECT value FROM meta WHERE key = ?;

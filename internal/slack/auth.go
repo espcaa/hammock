@@ -32,6 +32,7 @@ type WorkspaceSession struct {
 	TeamURL      string `json:"team_url"`
 	TeamIcon     string `json:"team_icon"`
 	EnterpriseID string `json:"enterprise_id,omitempty"`
+	Domain       string `json:"domain,omitempty"`
 }
 
 type slackTokenResult struct {

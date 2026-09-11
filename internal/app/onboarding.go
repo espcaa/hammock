@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
+	"fmt"
 	"image"
 	_ "image/jpeg"
 	"log"
@@ -37,110 +39,135 @@ type OnboardingScreen struct {
 }
 
 func FinishLogin(h *OnboardingScreen, st *store.Store) {
-	err := st.LoadSession()
-
-	if err == nil && st.SlackSession != nil { // we have a  session with a dcookie, but maybe no workspaces yet
-		h.loading = true
-		h.loadingStatus = "Fetching tokens..."
-
-		workspaces, err := slack.FetchTokens(st.SlackSession.DCookie)
-		if err != nil {
-			log.Printf("failed to fetch tokens: %v", err)
-			h.loading = false
-			h.errorMessage = "Failed to fetch tokens. Please try again."
-			return
-		}
-
-		workspaceIds := make([]string, 0, len(workspaces))
-		for id := range workspaces {
-			workspaceIds = append(workspaceIds, id)
-		}
-
-		st.SlackSession.WorkspacesIds = workspaceIds
-		st.SlackSession.WorkspaceSessions = workspaces
-
-		log.Printf("Fetched workspaces: %v", workspaceIds)
-
-		h.loadingStatus = "Saving session..."
-		err = h.store.SaveSession()
-		if err != nil {
-			log.Printf("failed to save session: %v", err)
-			h.loading = false
-			h.errorMessage = "Failed to save session. Please try again."
-			return
-		}
-
-		err = st.OpenCache()
-		if err != nil {
-			h.loading = false
-			h.errorMessage = "Failed to open cache. Please try again."
-			return
-		}
-
-		client := slack.NewClient(st.SlackSession)
-		if client == nil {
-			h.loading = false
-			h.errorMessage = "Failed to create slack client. Please try again."
-			return
-		}
-
-		// userboot for each workspace
-		for _, workspaceId := range workspaceIds {
-			h.loadingStatus = "Booting workspace: " + workspaceId
-
-			minChannelUpdated, err := st.MinChannelUpdated(workspaceId)
-
-			if err != nil {
-				minChannelUpdated = int64(0)
-				log.Printf("failed to get min channel updated for workspace %s: %v", workspaceId, err)
-			} else {
-				log.Printf("min channel updated for workspace %s: %d", workspaceId, minChannelUpdated)
-			}
-
-			var channelResp *slack.ClientChannelResponse
-
-			channelResp, err = client.GetChannels(workspaceId, minChannelUpdated)
-			if err != nil {
-				log.Printf("failed to userboot workspace %s: %v", workspaceId, err)
-				h.loading = false
-				h.errorMessage = "Failed to boot workspace: " + workspaceId + ". Please try again."
-				return
-			}
-			if channelResp.OK {
-				log.Printf("Successfully booted workspace %s", workspaceId)
-
-				// save channels to cache
-				err = st.UpsertChannels(channelResp.Channels.Channels, workspaceId)
-
-				err = st.UpsertIms(
-					channelResp.Channels.Ims,
-					workspaceId,
-				)
-
-				if err != nil {
-					log.Printf("failed to save channels for workspace %s: %v", workspaceId, err)
-					h.loading = false
-					h.errorMessage = "Failed to save channels for workspace: " + workspaceId + ". Please try again."
-					return
-				} else {
-					log.Printf("Successfully saved channels & ims for workspace %s", workspaceId)
-				}
-			} else {
-				log.Printf("Failed to boot workspace %s, try again", workspaceId)
-				h.loading = false
-				h.errorMessage = "Failed to boot workspace: " + workspaceId + ". Please try again."
-				return
-			}
-		}
-
-		// finally navigate to the main screen
-		h.mu.Lock()
-		h.pendingNav = NewMainScreen(h.theme, h.router, st, client)
-		h.mu.Unlock()
-		h.router.Invalidate()
-
+	if err := st.LoadSession(); err != nil {
+		fail(h, "Failed to load session", err)
 		return
 	}
+	if st.SlackSession == nil {
+		return // no saved session yet; wait for the user to log in
+	}
+
+	h.loading = true
+	h.loadingStatus = "Fetching tokens..."
+
+	workspaces, err := slack.FetchTokens(st.SlackSession.DCookie)
+	if err != nil {
+		fail(h, "Failed to fetch tokens", err)
+		return
+	}
+
+	st.SlackSession.WorkspacesIds = mapKeys(workspaces)
+	st.SlackSession.WorkspaceSessions = workspaces
+	log.Printf("Fetched workspaces: %v", st.SlackSession.WorkspacesIds)
+
+	h.loadingStatus = "Saving session..."
+	if err := st.SaveSession(); err != nil {
+		fail(h, "Failed to save session", err)
+		return
+	}
+
+	if err := st.OpenCache(); err != nil {
+		fail(h, "Failed to open cache", err)
+		return
+	}
+
+	client := slack.NewClient(st.SlackSession)
+	if client == nil {
+		fail(h, "Failed to create slack client", nil)
+		return
+	}
+
+	for _, workspaceID := range st.SlackSession.WorkspacesIds {
+		h.loadingStatus = "Booting workspace: " + workspaceID
+		if err := bootWorkspace(client, st, workspaceID); err != nil {
+			fail(h, fmt.Sprintf("Failed to %s", err), nil)
+			return
+		}
+		log.Printf("Booted workspace %s", workspaceID)
+	}
+
+	h.mu.Lock()
+	h.pendingNav = NewMainScreen(h.theme, h.router, st, client)
+	h.mu.Unlock()
+	h.router.Invalidate()
+}
+
+// bootWorkspace fetches the client.init profile, channel list and DMs for a
+// single workspace, then caches them.
+func bootWorkspace(client *slack.Client, st *store.Store, workspaceID string) error {
+	min := int64(0)
+	if v, err := st.MinChannelUpdated(workspaceID); err != nil {
+		log.Printf("min channel updated for %s unavailable: %v", workspaceID, err)
+	} else {
+		min = v
+	}
+
+	initResp, err := client.ClientInit(workspaceID, min)
+	if err != nil {
+		return fmt.Errorf("init client for workspace %s: %w", workspaceID, err)
+	}
+
+	selfRaw, err := json.Marshal(initResp.Self)
+	if err != nil {
+		return fmt.Errorf("encode self for workspace %s: %w", workspaceID, err)
+	}
+	if err := st.SaveSelf(workspaceID, selfRaw); err != nil {
+		return fmt.Errorf("save self for workspace %s: %w", workspaceID, err)
+	}
+	mergeWorkspace(st, workspaceID, initResp)
+
+	channelResp, err := client.GetChannels(workspaceID, min)
+	if err != nil {
+		return fmt.Errorf("boot workspace %s: %w", workspaceID, err)
+	}
+	if !channelResp.OK {
+		return fmt.Errorf("slack refused to boot workspace %s", workspaceID)
+	}
+
+	if err := st.UpsertChannels(channelResp.Channels.Channels, workspaceID); err != nil {
+		return fmt.Errorf("save channels for workspace %s: %w", workspaceID, err)
+	}
+	if err := st.UpsertIms(channelResp.Channels.Ims, workspaceID); err != nil {
+		return fmt.Errorf("save DMs for workspace %s: %w", workspaceID, err)
+	}
+	return nil
+}
+
+// mergeWorkspace copies the richer workspace metadata from client.init into
+// the in-memory session.
+func mergeWorkspace(st *store.Store, workspaceID string, initResp *slack.ClientInitResponse) {
+	ws, ok := st.SlackSession.WorkspaceSessions[workspaceID]
+	if !ok {
+		return
+	}
+	for _, w := range initResp.Workspaces {
+		if w.ID == workspaceID {
+			ws.TeamName, ws.Domain = w.Name, w.Domain
+			ws.TeamIcon = w.Icon.Image132
+			break
+		}
+	}
+	st.SlackSession.WorkspaceSessions[workspaceID] = ws
+}
+
+func mapKeys(m map[string]slack.WorkspaceSession) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// fail stops the loading spinner, shows a user-facing message and logs the
+// underlying error once.
+func fail(h *OnboardingScreen, msg string, err error) {
+	if err != nil {
+		log.Printf("%s: %v", msg, err)
+	} else {
+		log.Printf("%s", msg)
+	}
+	h.loading = false
+	h.errorMessage = msg + " Please try again."
 }
 
 func NewOnboardingScreen(th *ui.Theme, r *Router, st *store.Store) *OnboardingScreen {
@@ -186,53 +213,39 @@ func (a *OnboardingScreen) Layout(gtx layout.Context) layout.Dimensions {
 
 		// launch goroutine to run the login process
 		go func() {
-			// get the exec path of the current binary
 			execPath, err := os.Executable()
 			if err != nil {
-				log.Printf("failed to get executable path: %v", err)
+				fail(a, "Failed to locate app binary", err)
 				return
 			}
 
-			// run the exec with the __login flag
 			cmd := exec.Command(execPath, "__login")
 			output, err := cmd.Output()
 			if err != nil {
-				log.Printf("failed to run login process: %v", err)
-				a.loading = false
+				fail(a, "Login process failed", err)
 				return
 			}
 
 			parts := bytes.SplitN(output, []byte("|"), 2)
 			if len(parts) != 2 {
-				log.Printf("invalid output from login process: %s", output)
-				a.errorMessage = "Invalid output from login process. Please try again."
-				a.loading = false
+				fail(a, "Invalid output from login process", nil)
 				return
 			}
 
 			magicCode := string(parts[0])
 			workspaceId := string(parts[1])
-			log.Printf("Received magic code: %s", magicCode)
-			log.Printf("Received workspace id: %s", workspaceId)
 
 			a.loadingStatus = "Redeeming auth cookies..."
 
 			dcookie, err := slack.RedeemAuthCookies(magicCode, workspaceId, nil)
-
 			if err != nil {
-				log.Printf("failed to redeem auth cookies: %v", err)
-				a.loading = false
-				a.errorMessage = "Failed to redeem auth cookies. Please try again."
+				fail(a, "Failed to redeem auth cookies", err)
 				return
 			}
-
-			log.Printf("Received auth cookies: %v", dcookie)
 
 			a.store.SlackSession = &slack.SlackSession{
 				DCookie: dcookie,
 			}
-
-			// continue logging in
 
 			FinishLogin(a, a.store)
 		}()
