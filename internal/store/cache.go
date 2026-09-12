@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/espcaa/hammock/internal/slack"
 	"github.com/espcaa/hammock/internal/store/db"
@@ -251,4 +252,60 @@ func (s *Store) ListMessages(teamId string, channelId string) ([]db.Message, err
 		return nil, err
 	}
 	return messages, nil
+}
+
+func (s *Store) UpsertUsers(users []slack.UserProfile, teamId string) error {
+	ctx := context.Background()
+
+	for _, user := range users {
+		jsonProfile, err := json.Marshal(user.Profile)
+		if err != nil {
+			return err
+		}
+
+		err = s.dbq.UpsertUsers(ctx, db.UpsertUsersParams{
+			TeamID:   teamId,
+			ID:       user.ID,
+			Color:    sql.NullString{String: user.Color, Valid: user.Color != ""},
+			Name:     user.Name,
+			RealName: sql.NullString{String: user.RealName, Valid: user.RealName != ""},
+			IsBot: int64(func() int {
+				if user.IsBot {
+					return 1
+				}
+				return 0
+			}()),
+			Timezone:       sql.NullString{String: user.Timezone, Valid: user.Timezone != ""},
+			TimezoneOffset: sql.NullInt64{Int64: int64(user.TimezoneOffset), Valid: true},
+			Profile:        jsonProfile,
+			Updated:        time.Now().Unix(),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListUsers(teamId string) ([]db.User, error) {
+	ctx := context.Background()
+
+	users, err := s.dbq.ListUsers(ctx, teamId)
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+func (s *Store) GetUser(teamId string, userId string) (db.User, error) {
+	ctx := context.Background()
+
+	user, err := s.dbq.GetUser(ctx, db.GetUserParams{
+		TeamID: teamId,
+		ID:     userId,
+	})
+	if err != nil {
+		return db.User{}, err
+	}
+	return user, nil
 }

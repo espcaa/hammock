@@ -106,7 +106,7 @@ type ConversationHistoryResponse struct {
 	} `json:"response_metadata"`
 }
 
-func (c *Client) GetConversationHistory(teamId, channelID string, latest string, limit int) (*ConversationHistoryResponse, error) {
+func (c *Client) GetConversationHistory(teamId, channelID string, latest string, limit int) ([]Message, error) {
 	params := url.Values{}
 	params.Set("channel", channelID)
 	if latest != "" {
@@ -128,5 +128,5 @@ func (c *Client) GetConversationHistory(teamId, channelID string, latest string,
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, err
 	}
-	return &resp, nil
+	return resp.Messages, nil
 }

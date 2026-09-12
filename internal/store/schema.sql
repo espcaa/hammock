@@ -37,5 +37,19 @@ CREATE TABLE IF NOT EXISTS messages (
   PRIMARY KEY (team_id, channel_id, ts)
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  team_id      TEXT NOT NULL,
+  id           TEXT NOT NULL,
+  color       TEXT,
+  name        TEXT NOT NULL,
+  real_name   TEXT,
+  is_bot       INTEGER NOT NULL DEFAULT 0, -- 0 or 1 depending on if the user is a bot
+  timezone     TEXT,
+  timezone_offset INTEGER,
+  profile     JSON,
+  updated      INTEGER NOT NULL,
+  PRIMARY KEY (team_id, id)
+);
+
 
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages (team_id, channel_id, thread_ts);

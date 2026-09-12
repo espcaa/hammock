@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
@@ -200,7 +201,7 @@ func (c *Client) DoWithQuery(teamID string, method string, params url.Values, qu
 	return body, nil
 }
 
-func (c *Client) DoEdge(teamID string, resource string, payload map[string]any) (json.RawMessage, error) {
+func (c *Client) DoEdge(teamID string, resource string, payload json.RawMessage) (json.RawMessage, error) {
 	ws, ok := c.Session.WorkspaceSessions[teamID]
 	if !ok {
 		return nil, errors.New("unknown workspace: " + teamID)
@@ -211,19 +212,26 @@ func (c *Client) DoEdge(teamID string, resource string, payload map[string]any) 
 		team = ws.EnterpriseID
 	}
 
-	payload["token"] = ws.Token
-	payload["enterprise_token"] = ws.Token
-	payload["_x_app_name"] = "client"
-	payload["fp"] = "60"
+	payloadMap := make(map[string]any)
+	if err := json.Unmarshal(payload, &payloadMap); err != nil {
+		return nil, err
+	}
 
-	jsonData, err := json.Marshal(payload)
+	payloadMap["token"] = ws.Token
+	payloadMap["enterprise_token"] = ws.Token
+	payloadMap["_x_app_name"] = "client"
+	payloadMap["fp"] = "60"
+
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		return nil, err
 	}
 
 	apiURL := "https://edgeapi.slack.com/cache/" + team + "/" + resource + "?_x_app_name=client&fp=60&_x_num_retries=0"
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(jsonData))
+	fmt.Printf("DoEdge: %s\n", apiURL)
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +276,7 @@ func (c *Client) DoEdge(teamID string, resource string, payload map[string]any) 
 		Error string `json:"error"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, err
+		return nil, errors.New("failed to unmarshal edge response: " + err.Error() + " raw: " + string(body))
 	}
 
 	if !envelope.OK {

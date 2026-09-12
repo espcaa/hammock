@@ -42,7 +42,7 @@ func NewMainScreen(th *ui.Theme, r *Router, s *store.Store, client *slack.Client
 		cache:  ui.NewImageCache(),
 	}
 	m.sidebar = th.Sidebar(s, "", m.cache)
-	m.msgList = ui.NewMessageList(th)
+	m.msgList = ui.NewMessageList(th, s, m.currentTeamId)
 	m.sidebar.OnSelect(func(ch db.Channel) {
 		m.loadMessages(ch.ID)
 	})
@@ -55,6 +55,7 @@ func (m *MainScreen) ensureTeam() {
 	}
 	if m.currentTeamId != "" {
 		m.sidebar.SetTeam(m.currentTeamId)
+		m.msgList.SetTeam(m.currentTeamId)
 	}
 }
 
@@ -92,15 +93,12 @@ func (m *MainScreen) loadMessages(channelID string) {
 	m.msgList.Set(msgs)
 
 	go func() {
-		resp, err := m.client.GetConversationHistory(teamID, channelID, "", 28)
+		messages, err := m.client.GetConversationHistory(teamID, channelID, "", 28)
 		if err != nil {
 			log.Printf("conversation.history %s: %v", channelID, err)
 			return
 		}
-		if !resp.OK || len(resp.Messages) == 0 {
-			return
-		}
-		if err := m.store.UpsertMessages(resp.Messages, teamID, channelID); err != nil {
+		if err := m.store.UpsertMessages(messages, teamID, channelID); err != nil {
 			log.Printf("save messages %s: %v", channelID, err)
 			return
 		}
@@ -119,6 +117,25 @@ func (m *MainScreen) loadMessages(channelID string) {
 			m.router.Invalidate()
 		}
 		log.Printf("loaded %d messages for %s", len(fresh), channelID)
+	}()
+
+	go func() {
+		resp, err := m.client.GetUsersFromChannel(teamID, channelID, 30)
+		if err != nil {
+			log.Printf("get users %s: %v", channelID, err)
+			return
+		}
+		log.Printf("loaded %d users for %s", len(resp), channelID)
+
+		err = m.store.UpsertUsers(resp, teamID)
+		if err != nil {
+			log.Printf("save users %s: %v", channelID, err)
+			return
+		}
+		if m.cache.Pending(channelID) {
+			m.cache.Get(channelID)
+			m.router.Invalidate()
+		}
 	}()
 }
 

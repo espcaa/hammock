@@ -33,6 +33,34 @@ func (q *Queries) GetMinChannelUpdated(ctx context.Context, teamID string) (int6
 	return column_1, err
 }
 
+const getUser = `-- name: GetUser :one
+SELECT team_id, id, color, name, real_name, is_bot, timezone, timezone_offset, profile, updated FROM users
+WHERE team_id = ? AND id = ?
+`
+
+type GetUserParams struct {
+	TeamID string `json:"team_id"`
+	ID     string `json:"id"`
+}
+
+func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUser, arg.TeamID, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.TeamID,
+		&i.ID,
+		&i.Color,
+		&i.Name,
+		&i.RealName,
+		&i.IsBot,
+		&i.Timezone,
+		&i.TimezoneOffset,
+		&i.Profile,
+		&i.Updated,
+	)
+	return i, err
+}
+
 const listChannels = `-- name: ListChannels :many
 SELECT team_id, id, name, type, unread, mentions, updated, members, topic FROM channels
 WHERE team_id = ? AND type = ? ORDER BY name
@@ -139,6 +167,45 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 			&i.ThreadTs,
 			&i.Blocks,
 			&i.Raw,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT team_id, id, color, name, real_name, is_bot, timezone, timezone_offset, profile, updated FROM users
+WHERE team_id = ? ORDER BY name
+`
+
+func (q *Queries) ListUsers(ctx context.Context, teamID string) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.TeamID,
+			&i.ID,
+			&i.Color,
+			&i.Name,
+			&i.RealName,
+			&i.IsBot,
+			&i.Timezone,
+			&i.TimezoneOffset,
+			&i.Profile,
+			&i.Updated,
 		); err != nil {
 			return nil, err
 		}
@@ -260,5 +327,44 @@ type UpsertMetaParams struct {
 
 func (q *Queries) UpsertMeta(ctx context.Context, arg UpsertMetaParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMeta, arg.Key, arg.Value)
+	return err
+}
+
+const upsertUsers = `-- name: UpsertUsers :exec
+INSERT INTO users (team_id, id, color, name, real_name, is_bot, timezone, timezone_offset, profile, updated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (team_id, id) DO UPDATE SET
+  color = excluded.color, name = excluded.name, real_name = excluded.real_name,
+  is_bot = excluded.is_bot, timezone = excluded.timezone,
+  timezone_offset = excluded.timezone_offset, profile = excluded.profile,
+  updated = excluded.updated
+`
+
+type UpsertUsersParams struct {
+	TeamID         string          `json:"team_id"`
+	ID             string          `json:"id"`
+	Color          sql.NullString  `json:"color"`
+	Name           string          `json:"name"`
+	RealName       sql.NullString  `json:"real_name"`
+	IsBot          int64           `json:"is_bot"`
+	Timezone       sql.NullString  `json:"timezone"`
+	TimezoneOffset sql.NullInt64   `json:"timezone_offset"`
+	Profile        json.RawMessage `json:"profile"`
+	Updated        int64           `json:"updated"`
+}
+
+func (q *Queries) UpsertUsers(ctx context.Context, arg UpsertUsersParams) error {
+	_, err := q.db.ExecContext(ctx, upsertUsers,
+		arg.TeamID,
+		arg.ID,
+		arg.Color,
+		arg.Name,
+		arg.RealName,
+		arg.IsBot,
+		arg.Timezone,
+		arg.TimezoneOffset,
+		arg.Profile,
+		arg.Updated,
+	)
 	return err
 }

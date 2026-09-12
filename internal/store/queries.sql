@@ -40,3 +40,20 @@ ON CONFLICT (team_id, channel_id, ts) DO UPDATE SET
 -- name: ListMessages :many
 SELECT * FROM messages
 WHERE team_id = ? AND channel_id = ? ORDER BY ts DESC LIMIT ?;
+
+-- name: UpsertUsers :exec
+INSERT INTO users (team_id, id, color, name, real_name, is_bot, timezone, timezone_offset, profile, updated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (team_id, id) DO UPDATE SET
+  color = excluded.color, name = excluded.name, real_name = excluded.real_name,
+  is_bot = excluded.is_bot, timezone = excluded.timezone,
+  timezone_offset = excluded.timezone_offset, profile = excluded.profile,
+  updated = excluded.updated;
+
+-- name: ListUsers :many
+SELECT * FROM users
+WHERE team_id = ? ORDER BY name;
+
+-- name: GetUser :one
+SELECT * FROM users
+WHERE team_id = ? AND id = ?;

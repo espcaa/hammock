@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"gioui.org/layout"
 	"gioui.org/unit"
 
+	"github.com/espcaa/hammock/internal/misc"
+	"github.com/espcaa/hammock/internal/store"
 	"github.com/espcaa/hammock/internal/store/db"
 )
 
@@ -17,13 +20,24 @@ type MessageList struct {
 	theme    *Theme
 	list     layout.List
 	messages []db.Message
+	store    *store.Store
+	teamID   string
 }
 
-func NewMessageList(th *Theme) *MessageList {
+func NewMessageList(th *Theme, store *store.Store, teamID string) *MessageList {
 	return &MessageList{
-		theme: th,
-		list:  layout.List{Axis: layout.Vertical},
+		theme:  th,
+		list:   layout.List{Axis: layout.Vertical},
+		store:  store,
+		teamID: teamID,
 	}
+}
+
+func (m *MessageList) SetTeam(teamID string) {
+	if m.teamID == teamID {
+		return
+	}
+	m.teamID = teamID
 }
 
 func (m *MessageList) Set(messages []db.Message) {
@@ -54,6 +68,20 @@ func (m *MessageList) msgRow(gtx layout.Context, i int) layout.Dimensions {
 	text := messageText(msg)
 	ts := formatMessageTS(msg.Ts)
 
+	user, err := m.store.GetUser(m.teamID, msg.User.String)
+	var userName string
+	if err != nil {
+		userName = msg.User.String
+	} else {
+		userName = user.Name
+	}
+
+	var userColor color.NRGBA = m.theme.Danger
+
+	if user.Color.Valid {
+		userColor = misc.HexColor(user.Color.String)
+	}
+
 	return layout.Inset{
 		Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(6), Bottom: unit.Dp(6),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -61,8 +89,8 @@ func (m *MessageList) msgRow(gtx layout.Context, i int) layout.Dimensions {
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						lbl := m.theme.Label(m.senderName(msg), unit.Sp(13), font.Bold, false)
-						lbl.Color = m.theme.Text
+						lbl := m.theme.Label(userName, unit.Sp(13), font.Bold, false)
+						lbl.Color = userColor
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),

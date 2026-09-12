@@ -44,3 +44,16 @@ type Meta struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
+
+type User struct {
+	TeamID         string          `json:"team_id"`
+	ID             string          `json:"id"`
+	Color          sql.NullString  `json:"color"`
+	Name           string          `json:"name"`
+	RealName       sql.NullString  `json:"real_name"`
+	IsBot          int64           `json:"is_bot"`
+	Timezone       sql.NullString  `json:"timezone"`
+	TimezoneOffset sql.NullInt64   `json:"timezone_offset"`
+	Profile        json.RawMessage `json:"profile"`
+	Updated        int64           `json:"updated"`
+}
