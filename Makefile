@@ -1,3 +1,4 @@
+MACOSX_DEPLOYMENT_TARGET ?= 11.0
 APP_NAME := Hammock
 BUNDLE_DIR := $(APP_NAME).app
 
@@ -8,6 +9,9 @@ build-mac:
 	mkdir -p $(BUNDLE_DIR)/Contents/MacOS
 	mkdir -p $(BUNDLE_DIR)/Contents/Resources
 
+	MACOSX_DEPLOYMENT_TARGET=$(MACOSX_DEPLOYMENT_TARGET) \
+	CGO_CFLAGS="-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
+	CGO_LDFLAGS="-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o $(BUNDLE_DIR)/Contents/MacOS/hammock ./cmd/hammock
 
 	cp build/macos/Info.plist $(BUNDLE_DIR)/Contents/Info.plist
