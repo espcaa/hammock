@@ -4,13 +4,11 @@ go 1.26.1
 
 require (
 	gioui.org v0.10.1
-	github.com/adrg/xdg v0.5.3
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
 	github.com/coder/websocket v1.8.15
 	github.com/espcaa/webview_go v0.12.0-ua.1.0.20260803225209-5e95ade95b7d
 	github.com/google/uuid v1.6.0
-	github.com/ysmood/leakless v0.9.0
 	github.com/zalando/go-keyring v0.2.9-0.20260724212736-66b55cc0c51c
 	modernc.org/sqlite v1.56.0
 )
@@ -43,5 +41,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace github.com/espcaa/webview_go => ../webview_go
