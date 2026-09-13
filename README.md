@@ -1,3 +1,6 @@
+<img src="assets/login-screenshot.png" height="300" />
+<img src="assets/app-screenshot.png" height="300" />
+
 # hammock
 
 hammock is another slack client experiment! \
