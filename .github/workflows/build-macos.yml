@@ -21,8 +21,11 @@ jobs:
       - name: build & sign
         run: make build-mac
 
+      - name: compress app bundle
+        run: tar -czvf hammock-macos-arm64.tar.gz Hammock.app
+
       - name: upload file
         uses: actions/upload-artifact@v7
         with:
-          name: hammock-macos-arm64
-          path: Hammock.app
+          path: hammock-macos-arm64.tar.gz
+          archive: false
