@@ -32,17 +32,24 @@ type Sidebar struct {
 	loaded   bool
 	cache    *ImageCache
 
-	selectedID string
-	onSelect   func(db.Channel)
+	selectedID   string
+	onSelect     func(db.Channel)
+	logoutButton Button
+	onLogout     func(gtx layout.Context)
+}
+
+func (s *Sidebar) OnLogout(fn func(gtx layout.Context)) {
+	s.onLogout = fn
 }
 
 func (t *Theme) Sidebar(st *store.Store, teamID string, cache *ImageCache) *Sidebar {
 	return &Sidebar{
-		theme:  t,
-		store:  st,
-		teamID: teamID,
-		list:   layout.List{Axis: layout.Vertical},
-		cache:  cache,
+		theme:        t,
+		store:        st,
+		teamID:       teamID,
+		list:         layout.List{Axis: layout.Vertical},
+		cache:        cache,
+		logoutButton: Button{},
 	}
 }
 
@@ -109,6 +116,21 @@ func (s *Sidebar) Layout(gtx layout.Context) layout.Dimensions {
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(s.workspaceHeader),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(10), Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						btn := s.theme.Button(&s.logoutButton, "Logout")
+						if s.logoutButton.Click.Clicked(gtx) {
+							s.store.ClearSession()
+							if s.onLogout != nil {
+								s.onLogout(gtx)
+							} else {
+								gtx.Execute(op.InvalidateCmd{})
+							}
+						}
+						return btn.Layout(gtx)
+					})
+				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					lbl := s.theme.Label("Channels", unit.Sp(11), font.Bold, false)
 					lbl.Color = s.theme.Faint
@@ -121,6 +143,11 @@ func (s *Sidebar) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (s *Sidebar) workspaceHeader(gtx layout.Context) layout.Dimensions {
+
+	if s.store == nil || s.store.SlackSession == nil {
+		return layout.Dimensions{}
+	}
+
 	return layout.Inset{
 		Top: unit.Dp(12), Bottom: unit.Dp(8), Left: unit.Dp(10), Right: unit.Dp(10),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

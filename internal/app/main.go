@@ -46,6 +46,9 @@ func NewMainScreen(th *ui.Theme, r *Router, s *store.Store, client *slack.Client
 	m.sidebar.OnSelect(func(ch db.Channel) {
 		m.loadMessages(ch.ID)
 	})
+	m.sidebar.OnLogout(func(gtx layout.Context) {
+		m.router.Replace(gtx, NewOnboardingScreen(m.theme, m.router, m.store))
+	})
 	return m
 }
 
