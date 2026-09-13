@@ -1,5 +1,5 @@
-<img src="assets/login-screenshot.png" height="300" />
-<img src="assets/app-screenshot.png" height="300" />
+<img src="assets/login-screenshot.png" height="150" />
+<img src="assets/app-screenshot.png" height="150" />
 
 # hammock
 
